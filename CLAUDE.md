@@ -63,7 +63,7 @@ runtime stage, so build and runtime must stay on the same Debian base.
   informational only — never enforce them in logic.
 - **Templates: library vs. active slot** (a non-obvious domain rule). The
   `template` table is the user's library. `active_template` is a **single
-  persistent row** — a freely-editable *copy* that drives the daily projection.
+  persistent row** — a freely-editable _copy_ that drives the daily projection.
   Editing the active slot must **never** mutate a library `template`; saving to
   the library is an explicit, separate action. There is no age-based selection.
 - **Projection engine (core, to be built).** Relative wake windows cascade
