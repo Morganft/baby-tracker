@@ -1,8 +1,8 @@
 # Handover — next steps
 
 Last updated: 2026-07-09 · Starting point: commit `a3083d9` (initial scaffold)
-· Steps 1 (projection engine), 2 (data access + JSON API), and 3 (quick-log +
-"Right now" home) complete.
+· Steps 1 (projection engine), 2 (data access + JSON API), 3 (quick-log +
+"Right now" home), and 4 (remaining v1 views) complete.
 
 Read `REQUIREMENTS.md` for the full spec and `CLAUDE.md` for the Docker-only
 workflow (no host Node). This doc is just the ordered build plan from here.
@@ -95,13 +95,33 @@ enhancement (works without JS; re-projects server-side on every log):
 **Not done / deferred to Step 4** (see `BACKLOG.md`): editing the morning-wake
 time from home, and capturing optional location/put-down/notes on a log.
 
-### 4. Remaining v1 views
+### 4. Remaining v1 views ✅ DONE
 
-- **Today's timeline** — planned vs. actual on a 24h view.
-- **History list** — chronological, editable/deletable entries.
-- **Template management** — library list, load-into-active-slot, edit active slot,
-  save-to-library (explicit; never mutates the source template).
-- **Settings** — short-nap %, clock format, timezone tracking.
+Bottom-tab nav in `+layout.svelte` (Now / Today / History / Plan / Settings,
+`resolve()`d links, active-tab highlight). All four views are SSR + progressive
+enhancement. Shared, client-safe display helpers live in `src/lib/format.ts`;
+`buildProjection` was extracted to `src/lib/server/queries/projection.ts` and is
+now shared by the home + timeline loads.
+
+- **Today's timeline** (`/timeline`) — proportional day view from the anchor to
+  bedtime: completed/in-progress sleeps solid, projected dashed, a live "now"
+  line and hour gridlines. Read-only (re-uses the same server projection).
+- **History** (`/history`) — all entries most-recent-first, grouped by each
+  entry's own local day (travel-safe). Inline edit (times via `datetime-local`
+  resolved through the new `resolveLocalDateTime`, type/location/put-down/notes)
+  and delete, both progressive-enhancement form actions; edit enforces
+  end ≥ start. Night-waking counts shown read-only (logging UI deferred).
+- **Template management** (`/templates`) — active-slot editor (arrays as
+  comma-separated minutes, validated via `parseTemplate`); load a library
+  template into the slot; save the active slot to the library as a new entry or
+  overwrite an existing one; delete. Verified live that editing the active slot
+  never mutates the library.
+- **Settings** (`/settings`) — short-nap threshold + reduction %, 24h clock,
+  timezone tracking, via `parseSettingsUpdate`.
+
+Gates green (check/lint/test/build); driven end-to-end by `scripts/verify-step4.sh`
+(18 checks) plus the existing `scripts/smoke.sh` for home regression. Deferred
+robustness/UX items are in `BACKLOG.md`.
 
 ### 5. Offline + export/import
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveClockTime } from './time';
+import { resolveClockTime, resolveLocalDateTime } from './time';
 
 describe('resolveClockTime', () => {
 	it('resolves a clock time on the reference calendar day in UTC', () => {
@@ -27,5 +27,25 @@ describe('resolveClockTime', () => {
 		const got = resolveClockTime('07:00', ref, 'Europe/Prague');
 		// 07:00 CET = 06:00 UTC.
 		expect(got).toBe(Date.UTC(2026, 0, 15, 6, 0));
+	});
+});
+
+describe('resolveLocalDateTime', () => {
+	it('resolves a datetime-local wall clock in UTC', () => {
+		expect(resolveLocalDateTime('2026-07-09T13:45', 'UTC')).toBe(Date.UTC(2026, 6, 9, 13, 45));
+	});
+
+	it('resolves a summer datetime in a European zone (CEST, UTC+2)', () => {
+		// 13:45 CEST = 11:45 UTC.
+		expect(resolveLocalDateTime('2026-07-09T13:45', 'Europe/Prague')).toBe(
+			Date.UTC(2026, 6, 9, 11, 45)
+		);
+	});
+
+	it('resolves a winter datetime in a European zone (CET, UTC+1)', () => {
+		// 08:30 CET = 07:30 UTC.
+		expect(resolveLocalDateTime('2026-01-15T08:30', 'Europe/Prague')).toBe(
+			Date.UTC(2026, 0, 15, 7, 30)
+		);
 	});
 });

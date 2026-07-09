@@ -5,37 +5,11 @@
  */
 import { getActiveTemplate } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
-import { assembleDay, getActiveSleep, createSleep, updateSleep } from '$lib/server/queries/sleeps';
+import { getActiveSleep, createSleep, updateSleep } from '$lib/server/queries/sleeps';
+import { buildProjection } from '$lib/server/queries/projection';
 import { serverTimeZone } from '$lib/server/api/validate';
-import { project } from '$lib/projection/project';
-import type { Projection } from '$lib/projection/types';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-
-/** Assemble the projection for `now` in `timeZone` from the active template + DB. */
-function buildProjection(now: number, timeZone: string): Projection {
-	const template = getActiveTemplate();
-	const settings = getSettings();
-	const { sleeps, morningWake } = assembleDay(now, timeZone);
-	return project({
-		now,
-		timeZone,
-		template: {
-			referenceWakeTime: template.referenceWakeTime,
-			napCount: template.napCount,
-			wakeWindows: template.wakeWindows,
-			expectedNapDurations: template.expectedNapDurations,
-			daytimeCap: template.daytimeCap,
-			dailyTotalSleepTarget: template.dailyTotalSleepTarget
-		},
-		settings: {
-			shortNapThresholdMin: settings.shortNapThresholdMin,
-			shortNapReductionPercent: settings.shortNapReductionPercent
-		},
-		sleeps,
-		morningWake
-	});
-}
 
 export const load: PageServerLoad = () => {
 	const now = Date.now();

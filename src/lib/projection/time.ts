@@ -38,9 +38,29 @@ function tzOffsetMs(t: number, timeZone: string): number {
 }
 
 /**
+ * Resolve a wall-clock time (Y/M/D H:M in `timeZone`) to an absolute epoch-ms
+ * instant. DST-safe: the offset is measured at the target instant, then refined
+ * once to settle transitions.
+ */
+function resolveWallClock(
+	year: number,
+	month: number,
+	day: number,
+	hour: number,
+	minute: number,
+	timeZone: string
+): number {
+	const utcGuess = Date.UTC(year, month - 1, day, hour, minute);
+	const offset1 = tzOffsetMs(utcGuess, timeZone);
+	let t = utcGuess - offset1;
+	const offset2 = tzOffsetMs(t, timeZone);
+	if (offset2 !== offset1) t = utcGuess - offset2;
+	return t;
+}
+
+/**
  * Resolve a wall-clock 'HH:MM' on the calendar day of `referenceEpoch` (as seen
- * in `timeZone`) to an absolute epoch-ms instant. DST-safe: the offset is
- * measured at the target instant, then refined once to settle transitions.
+ * in `timeZone`) to an absolute epoch-ms instant.
  */
 export function resolveClockTime(hhmm: string, referenceEpoch: number, timeZone: string): number {
 	const [h, m] = hhmm.split(':').map(Number);
@@ -54,16 +74,19 @@ export function resolveClockTime(hhmm: string, referenceEpoch: number, timeZone:
 	});
 	const parts = dtf.formatToParts(referenceEpoch);
 	const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-	const year = get('year');
-	const month = get('month');
-	const day = get('day');
+	return resolveWallClock(get('year'), get('month'), get('day'), h, m, timeZone);
+}
 
-	const utcGuess = Date.UTC(year, month - 1, day, h, m);
-	const offset1 = tzOffsetMs(utcGuess, timeZone);
-	let t = utcGuess - offset1;
-	const offset2 = tzOffsetMs(t, timeZone);
-	if (offset2 !== offset1) t = utcGuess - offset2;
-	return t;
+/**
+ * Resolve an `<input type="datetime-local">` value ('YYYY-MM-DDTHH:MM', the wall
+ * clock a user typed) interpreted in `timeZone` to an absolute epoch-ms instant.
+ * Used when editing a past entry's timestamps from the History view.
+ */
+export function resolveLocalDateTime(local: string, timeZone: string): number {
+	const [date, time] = local.split('T');
+	const [year, month, day] = date.split('-').map(Number);
+	const [h, m] = time.split(':').map(Number);
+	return resolveWallClock(year, month, day, h, m, timeZone);
 }
 
 export function minutesToMs(min: number): number {
