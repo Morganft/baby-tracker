@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    image: baby-tracker
+    container_name: baby-tracker
+    restart: unless-stopped
+    ports:
+      # Host:container. Reachable on your LAN / VPN only (no auth by design).
+      - '3000:3000'
+    volumes:
+      # The whole dataset is one SQLite file under here — back this up.
+      - baby-tracker-data:/data
+    environment:
+      DATABASE_URL: /data/app.db
+      ORIGIN: http://localhost:3000
+
+volumes:
+  baby-tracker-data:

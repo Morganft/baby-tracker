@@ -1,0 +1,19 @@
+{
+	"name": "Baby Sleep Tracker",
+	"short_name": "Sleep",
+	"description": "Track your baby's sleep against a planned schedule.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "portrait",
+	"background_color": "#0b1020",
+	"theme_color": "#4f46e5",
+	"icons": [
+		{
+			"src": "/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any maskable"
+		}
+	]
+}
