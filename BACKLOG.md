@@ -2,6 +2,19 @@
 
 Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it can wait>`.
 
+## 2026-07-10 — Step 5 (export / import)
+
+- [import] Night wakings carry no `updatedAt`, so import dedupes them by id only — a waking whose `time` changed at the source won't overwrite the stored copy on re-import. Fine today (there's no waking-edit UI, so a waking's time never changes); revisit if per-waking editing lands.
+- [import] `parseBackup` validates the settings numeric fields (`shortNapThresholdMin`, `shortNapReductionPercent`) as finite numbers rather than integers, so a hand-crafted float would import. Harmless — our own export always emits integers and these limits are informational — tighten to an integer check if hand-edited dumps become common.
+- [import] The whole dump is read into memory and merged in one transaction — no size cap or streaming. Fine at personal/LAN scale; add a request-size limit if dumps ever get large.
+- [import] Last-write-wins on the singletons (`active_template` id `active`, `settings`) means a freshly-seeded install — whose default rows get an `updatedAt` bumped to first-read time — can shadow an *older*, hand-edited active slot/settings coming from the dump. Correct per the last-write-wins rule, but a restore onto a brand-new install may keep the seeded defaults instead of the backup's schedule. Special-case the singletons (always take the imported copy) or document in release notes if it surprises users.
+- [offline] Deferred from this loop: the offline write-queue (buffer POST/PATCH/DELETE in IndexedDB, replay on reconnect) is still unbuilt — the service worker only precaches the app shell. Export/import shipped; the queue is the remaining half of REQUIREMENTS §3 "Offline".
+
+## 2026-07-10 — Reported bugs (time format, timezone display)
+
+- [ux] 24-hour time doesn't work — the `clock24h` setting isn't applied (times still render 12-hour, or the toggle has no effect). Audit where `clock24h` is read vs. where times are formatted (`format.ts`) and ensure the flag threads through every time-rendering path.
+- [ux] Timezone isn't shown properly — per-entry IANA `timezone` (stored on each sleep) isn't surfaced/rendered correctly in the UI. Confirm the DTO carries it and the views display the right zone, especially for travel/DST entries.
+
 ## 2026-07-10 — UI fixes (wake windows, day-start, awake budget, Add)
 
 - [budget] The home "Awake today" tile computes awake = elapsed-since-anchor − daytime sleep, which does **not** subtract a logged night sleep. Accurate through the active day; once tonight's bedtime is logged the figure keeps climbing (counts night-sleep as awake). Subtract in-progress/completed night-sleep elapsed if it ever shows oddly after bedtime.

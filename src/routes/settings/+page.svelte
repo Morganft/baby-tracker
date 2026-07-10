@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -118,4 +119,57 @@
 			Save settings
 		</button>
 	</form>
+
+	<div
+		class="space-y-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
+	>
+		<div>
+			<h3 class="text-sm font-medium">Backup &amp; restore</h3>
+			<p class="mt-1 text-xs opacity-60">
+				Export everything to one JSON file, or merge a backup back in (matched by id, newest wins).
+			</p>
+		</div>
+
+		{#if form?.imported}
+			<p
+				class="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400"
+			>
+				{form.imported}
+			</p>
+		{:else if form && 'importMessage' in form && form.importMessage}
+			<p class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+				{form.importMessage}
+			</p>
+		{/if}
+
+		<a
+			href={resolve('/api/export')}
+			download
+			class="block w-full rounded-2xl border border-indigo-600 px-4 py-3 text-center font-semibold text-indigo-600 active:scale-[0.99] dark:text-indigo-400"
+		>
+			Export data
+		</a>
+
+		<form
+			method="POST"
+			action="?/import"
+			enctype="multipart/form-data"
+			class="space-y-3"
+			use:enhance
+		>
+			<input
+				type="file"
+				name="file"
+				accept="application/json,.json"
+				required
+				class="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
+			/>
+			<button
+				type="submit"
+				class="w-full rounded-2xl border border-black/15 px-4 py-3 font-semibold active:scale-[0.99] dark:border-white/20"
+			>
+				Import backup
+			</button>
+		</form>
+	</div>
 </section>

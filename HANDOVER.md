@@ -228,10 +228,20 @@ robustness/UX items are in `BACKLOG.md`.
 
 ### 5. Offline + export/import
 
-- Offline write-queue: buffer writes in IndexedDB, replay on reconnect (the
-  service worker currently only precaches the app shell).
-- Export: one JSON dump (entries + templates + baby + settings).
-- Import: **merge** — dedupe by UUID, last-write-wins via `updated_at`.
+- **Export / import ✅ DONE (2026-07-10).** Full-dataset JSON backup + merge
+  restore. Pure format + last-write-wins decision live in
+  `src/lib/server/backup/dump.ts` (`parseBackup`, `lww`, unit-tested in
+  `dump.spec.ts`); the DB read/write side is `src/lib/server/backup/index.ts`
+  (`exportData`, `importData` — one transaction, timestamps written verbatim so
+  re-import is a no-op). Endpoints: `GET /api/export` (attachment download of
+  every table incl. the active slot) and `POST /api/import` (dedupe by UUID,
+  LWW on `updated_at`; night wakings dedupe by id and skip orphans). Settings
+  page has Export-download + Import-file-upload (progressive enhancement). Gates
+  green (check/lint/test/build); driven e2e by `scripts/verify-backup.sh`
+  (14 checks, two throwaway DBs). Non-critical follow-ups in `BACKLOG.md`.
+- **Offline write-queue — STILL TODO.** Buffer writes in IndexedDB, replay on
+  reconnect (the service worker currently only precaches the app shell). This is
+  the remaining half of Step 5; it was scoped out of the export/import loop.
 
 ## Deferred (post-v1)
 
