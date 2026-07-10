@@ -76,6 +76,16 @@ export function serverTimeZone(): string {
 	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
+/**
+ * The IANA zone to store for a new/edited entry. When per-entry tracking is on
+ * (default) and the client sent its own valid zone, that wins — this is how a
+ * travelling phone captures where it actually was. Otherwise (tracking off, or a
+ * no-JS submit that carried no zone) fall back to the server's reference zone.
+ */
+export function resolveEntryTimezone(clientTz: unknown, trackTimezone: boolean): string {
+	return trackTimezone && isValidTimeZone(clientTz) ? clientTz : serverTimeZone();
+}
+
 export interface SleepCreate {
 	id?: string;
 	startTime: number;

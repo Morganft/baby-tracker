@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { resolveClockTime } from '$lib/projection/time';
+	import { browserTimeZone } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -188,7 +189,13 @@
 	</div>
 
 	<!-- Quick-log -->
-	<form method="POST" action={asleep ? '?/awake' : '?/asleep'} use:enhance>
+	<form
+		method="POST"
+		action={asleep ? '?/awake' : '?/asleep'}
+		use:enhance={({ formData }) => {
+			formData.set('timezone', browserTimeZone());
+		}}
+	>
 		<button
 			type="submit"
 			class="w-full rounded-2xl px-4 py-7 text-lg font-semibold text-white active:scale-[0.99] {asleep

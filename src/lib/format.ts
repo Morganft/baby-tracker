@@ -15,6 +15,19 @@ export function fmtTime(epoch: number, timeZone: string, clock24h: boolean): str
 	}).format(epoch);
 }
 
+/** This device's IANA zone, sent with a log so a travelling phone captures its own. */
+export function browserTimeZone(): string {
+	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+/** Short zone label of an epoch in `timeZone`, e.g. 'GMT+2' or 'CEST'. */
+export function fmtZoneAbbrev(epoch: number, timeZone: string): string {
+	const p = new Intl.DateTimeFormat('en-GB', { timeZone, timeZoneName: 'short' }).formatToParts(
+		epoch
+	);
+	return p.find((x) => x.type === 'timeZoneName')?.value ?? '';
+}
+
 /** Compact duration, e.g. '1h 05m' or '45m'. */
 export function fmtDuration(min: number): string {
 	const h = Math.floor(min / 60);

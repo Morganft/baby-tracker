@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { toDateTimeInput } from '$lib/format';
+	import { toDateTimeInput, browserTimeZone } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -9,8 +9,12 @@
 	const LOCATIONS = ['crib', 'stroller', 'car', 'contact', 'other'];
 	const PUT_DOWNS = ['drowsy', 'already-asleep', 'self-settled'];
 
-	// Prefill the start with "now" in the display zone; end left blank (in progress).
-	const startDefault = $derived(toDateTimeInput(data.now, data.timeZone));
+	// Zone the user types against: the phone's own when tracking travel, else the
+	// server reference. Prefill and the submitted `timezone` must agree so the epoch
+	// round-trips (SSR uses the server zone; hydration switches to the phone's).
+	const entryZone = $derived(data.trackTimezone ? browserTimeZone() : data.timeZone);
+	// Prefill the start with "now" in that zone; end left blank (in progress).
+	const startDefault = $derived(toDateTimeInput(data.now, entryZone));
 </script>
 
 <section class="space-y-5">
@@ -29,6 +33,7 @@
 
 	<form method="POST" action="?/create" class="space-y-4" use:enhance>
 		<input type="hidden" name="from" value={data.from} />
+		<input type="hidden" name="timezone" value={entryZone} />
 
 		<label class="block text-xs font-medium opacity-70">
 			Start

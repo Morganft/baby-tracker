@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { fmtTime, fmtDuration, toDateTimeInput } from '$lib/format';
+	import { fmtTime, fmtDuration, fmtZoneAbbrev, toDateTimeInput } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const clock24h = $derived(data.clock24h);
 	const time = (e: number, tz: string) => fmtTime(e, tz, clock24h);
+	// Only label the zone on travel entries — those captured outside the display zone.
+	const zoneLabel = (e: number, tz: string) =>
+		tz === data.displayZone ? '' : fmtZoneAbbrev(e, tz);
 
 	function durationMin(start: number, end: number | null): number | null {
 		return end == null ? null : Math.max(0, Math.round((end - start) / 60_000));
@@ -58,7 +61,12 @@
 									{time(e.startTime, e.timezone)}{#if e.endTime != null}–{time(
 											e.endTime,
 											e.timezone
-										)}{:else}<span class="opacity-60"> · in progress</span>{/if}
+										)}{:else}<span class="opacity-60">
+											· in progress</span
+										>{/if}{#if zoneLabel(e.startTime, e.timezone)}<span
+											class="ml-1.5 rounded bg-black/[0.06] px-1 py-0.5 text-[0.65rem] font-medium opacity-70 dark:bg-white/10"
+											>{zoneLabel(e.startTime, e.timezone)}</span
+										>{/if}
 								</p>
 								<p class="text-xs opacity-60">
 									{e.type === 'night' ? 'Night' : 'Nap'}

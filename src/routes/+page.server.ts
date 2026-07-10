@@ -7,7 +7,7 @@ import { getActiveTemplate } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
 import { getActiveSleep, createSleep, updateSleep } from '$lib/server/queries/sleeps';
 import { buildProjection } from '$lib/server/queries/projection';
-import { serverTimeZone } from '$lib/server/api/validate';
+import { serverTimeZone, resolveEntryTimezone } from '$lib/server/api/validate';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -31,15 +31,19 @@ export const load: PageServerLoad = () => {
 
 export const actions: Actions = {
 	/** Quick-log "fell asleep": start the next planned sleep at the current time. */
-	asleep: () => {
+	asleep: async ({ request }) => {
 		const now = Date.now();
 		const timeZone = serverTimeZone();
 		if (getActiveSleep()) return fail(409, { message: 'Already asleep' });
+		// The instant is absolute (`now`); the stored zone is a display label, so we can
+		// safely take the phone's own zone (sent by the enhanced form) when tracking is on.
+		const clientTz = String((await request.formData()).get('timezone') ?? '');
+		const entryTz = resolveEntryTimezone(clientTz, getSettings().trackTimezone);
 		const type = buildProjection(now, timeZone).nextSleep?.type ?? 'night';
 		createSleep({
 			startTime: now,
 			endTime: null,
-			timezone: timeZone,
+			timezone: entryTz,
 			type,
 			location: null,
 			putDown: null,

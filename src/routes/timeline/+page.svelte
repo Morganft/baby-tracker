@@ -185,7 +185,9 @@
 				>
 					<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
 						🌙 {typeLabel(s.type, i)}
-						{#if s.status === 'projected'}<span class="font-normal opacity-60"> · planned</span>{/if}
+						{#if s.status === 'projected'}<span class="font-normal opacity-60">
+								· planned</span
+							>{/if}
 					</p>
 					<p class="truncate text-xs opacity-70">{time(s.start)}</p>
 				</div>

@@ -5,7 +5,7 @@
  */
 import { createSleep } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
-import { parseSleepCreate, serverTimeZone } from '$lib/server/api/validate';
+import { parseSleepCreate, serverTimeZone, resolveEntryTimezone } from '$lib/server/api/validate';
 import { resolveLocalDateTime } from '$lib/projection/time';
 import { fail, redirect, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -24,6 +24,7 @@ export const load: PageServerLoad = ({ url }) => {
 		now: Date.now(),
 		timeZone: serverTimeZone(),
 		clock24h: settings.clock24h,
+		trackTimezone: settings.trackTimezone,
 		from: safeFrom(url.searchParams.get('from'))
 	};
 };
@@ -34,7 +35,9 @@ export const actions: Actions = {
 	create: async ({ request }) => {
 		const b = await request.formData();
 		const from = safeFrom(s(b.get('from')));
-		const timezone = serverTimeZone();
+		// Resolve the typed wall-clock in the same zone we store, so the epoch round-trips.
+		// The enhanced form sends the phone's zone (honoured when tracking is on).
+		const timezone = resolveEntryTimezone(b.get('timezone'), getSettings().trackTimezone);
 		const startLocal = s(b.get('startLocal'));
 		const endLocal = s(b.get('endLocal'));
 		if (!startLocal) return fail(400, { message: 'Start time is required' });

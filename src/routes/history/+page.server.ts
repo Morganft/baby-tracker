@@ -6,7 +6,7 @@
  */
 import { listSleeps, updateSleep, deleteSleep, type SleepDTO } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
-import { parseSleepUpdate } from '$lib/server/api/validate';
+import { parseSleepUpdate, serverTimeZone } from '$lib/server/api/validate';
 import { resolveLocalDateTime } from '$lib/projection/time';
 import { localDateKey } from '$lib/server/queries/day';
 import { fmtDayHeading } from '$lib/format';
@@ -37,7 +37,8 @@ export const load: PageServerLoad = () => {
 		group.entries.push(e);
 	}
 
-	return { clock24h: settings.clock24h, groups };
+	// The reference zone; entries whose own zone differs (travel) get a zone label.
+	return { clock24h: settings.clock24h, displayZone: serverTimeZone(), groups };
 };
 
 /** Turn a thrown SvelteKit `error()` from validation into an action `fail`. */
