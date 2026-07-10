@@ -22,17 +22,27 @@
 
 	const sleeps = $derived(data.projection.sleeps);
 
-	// Wake-window segments: the awake gap leading into each sleep, labelled with
-	// its duration (actual for logged sleeps, template/redistributed otherwise).
+	// Wake-window segments: the awake gap leading into each sleep, rendered as a
+	// block spanning cursor→sleep-start with its duration (actual for logged
+	// sleeps, template/redistributed otherwise). `planned` = leads into a
+	// not-yet-logged sleep, so the window itself is a projection.
 	const windows = $derived.by(() => {
-		const out: { mid: number; min: number; reduced: boolean }[] = [];
+		const out: {
+			start: number;
+			end: number;
+			min: number;
+			reduced: boolean;
+			planned: boolean;
+		}[] = [];
 		let cursor = data.projection.anchor;
 		for (const s of sleeps) {
 			if (s.start > cursor) {
 				out.push({
-					mid: (cursor + s.start) / 2,
+					start: cursor,
+					end: s.start,
 					min: s.wakeWindowBeforeMin,
-					reduced: s.wakeWindowReduced
+					reduced: s.wakeWindowReduced,
+					planned: s.status === 'projected'
 				});
 			}
 			cursor = s.projectedEnd ?? s.end ?? s.start;
@@ -96,6 +106,11 @@
 				class="inline-block h-3 w-3 rounded-sm border border-dashed border-indigo-400/50 bg-indigo-400/[0.08]"
 			></span> planned</span
 		>
+		<span class="flex items-center gap-1"
+			><span
+				class="inline-block h-3 w-3 rounded-sm border border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]"
+			></span> awake</span
+		>
 	</div>
 
 	<div class="relative" style="height: {height}px">
@@ -109,18 +124,22 @@
 			</div>
 		{/each}
 
-		<!-- Wake-window labels, centred in the awake gaps between sleeps -->
-		{#each windows as w (w.mid)}
+		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start -->
+		{#each windows as w (w.start)}
+			{@const top = pos(w.start)}
+			{@const h = Math.max(pos(w.end) - top, 22)}
 			<div
-				class="absolute right-0 left-14 flex -translate-y-1/2 items-center justify-center"
-				style="top: {pos(w.mid)}px"
+				class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 {w.planned
+					? 'border-dashed border-black/15 bg-black/[0.02] dark:border-white/15 dark:bg-white/[0.02]'
+					: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'}"
+				style="top: {top}px; height: {h}px"
 			>
-				<span
-					class="rounded-full bg-black/[0.04] px-2 py-0.5 text-[0.6875rem] text-black/50 dark:bg-white/[0.06] dark:text-white/50"
-				>
-					{fmtDuration(w.min)} awake{#if w.reduced}
-						· short{/if}
-				</span>
+				<p class="truncate text-sm font-medium opacity-70">
+					Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400"> · short</span>{/if}
+				</p>
+				<p class="truncate text-xs opacity-60">
+					{time(w.start)}–{time(w.end)} · {fmtDuration(w.min)}
+				</p>
 			</div>
 		{/each}
 
