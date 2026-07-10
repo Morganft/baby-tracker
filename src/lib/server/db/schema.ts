@@ -40,7 +40,19 @@ const templateColumns = {
 	dailyTotalSleepTarget: integer('daily_total_sleep_target'), // minutes, reference only
 	daytimeCap: integer('daytime_cap'), // minutes, reference only
 	bedtimeStart: text('bedtime_start'), // 'HH:MM', reference only
-	bedtimeEnd: text('bedtime_end') // 'HH:MM', reference only
+	bedtimeEnd: text('bedtime_end'), // 'HH:MM', reference only
+	// --- Enforced redistribution config (see projection engine §5.2–5.4). ---
+	// The fixed day-anchor bedtime; when set, the projected tail is redistributed
+	// to land on it instead of sliding. Null → legacy cascade.
+	targetBedtime: text('target_bedtime'), // 'HH:MM'
+	// Per-position min/max bounds (minutes) for the redistribution. When present,
+	// `wakeWindow*` align with `wakeWindows` (length napCount + 1) and
+	// `napDuration*` align with `expectedNapDurations` (length napCount). Null →
+	// unbounded (0 … +∞) for every position.
+	wakeWindowMin: text('wake_window_min', { mode: 'json' }).$type<number[]>(),
+	wakeWindowMax: text('wake_window_max', { mode: 'json' }).$type<number[]>(),
+	napDurationMin: text('nap_duration_min', { mode: 'json' }).$type<number[]>(),
+	napDurationMax: text('nap_duration_max', { mode: 'json' }).$type<number[]>()
 };
 
 /** User-authored library of schedule templates. */

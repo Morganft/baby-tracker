@@ -38,6 +38,12 @@ function csv(v: FormDataEntryValue | null): number[] {
 		.map(Number);
 }
 
+/** Like `csv`, but an all-empty field becomes null (bounds are optional). */
+function csvOrNull(v: FormDataEntryValue | null): number[] | null {
+	const arr = csv(v);
+	return arr.length > 0 ? arr : null;
+}
+
 /** Build + validate a TemplateInput from the active-slot editor form. */
 function templateFromForm(b: FormData): TemplateInput {
 	return parseTemplate({
@@ -49,7 +55,12 @@ function templateFromForm(b: FormData): TemplateInput {
 		dailyTotalSleepTarget: numOrNull(b.get('dailyTotalSleepTarget')),
 		daytimeCap: numOrNull(b.get('daytimeCap')),
 		bedtimeStart: s(b.get('bedtimeStart')) || null,
-		bedtimeEnd: s(b.get('bedtimeEnd')) || null
+		bedtimeEnd: s(b.get('bedtimeEnd')) || null,
+		targetBedtime: s(b.get('targetBedtime')) || null,
+		wakeWindowMin: csvOrNull(b.get('wakeWindowMin')),
+		wakeWindowMax: csvOrNull(b.get('wakeWindowMax')),
+		napDurationMin: csvOrNull(b.get('napDurationMin')),
+		napDurationMax: csvOrNull(b.get('napDurationMax'))
 	});
 }
 
@@ -64,7 +75,12 @@ function activeColumns(a: ActiveTemplateDTO): TemplateInput {
 		dailyTotalSleepTarget: a.dailyTotalSleepTarget,
 		daytimeCap: a.daytimeCap,
 		bedtimeStart: a.bedtimeStart,
-		bedtimeEnd: a.bedtimeEnd
+		bedtimeEnd: a.bedtimeEnd,
+		targetBedtime: a.targetBedtime,
+		wakeWindowMin: a.wakeWindowMin,
+		wakeWindowMax: a.wakeWindowMax,
+		napDurationMin: a.napDurationMin,
+		napDurationMax: a.napDurationMax
 	};
 }
 

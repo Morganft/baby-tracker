@@ -22,7 +22,15 @@ const EXAMPLE_TEMPLATE = {
 	dailyTotalSleepTarget: 840, // 14h, reference only
 	daytimeCap: 195, // reference only
 	bedtimeStart: '19:00',
-	bedtimeEnd: '19:30'
+	bedtimeEnd: '19:30',
+	// Enforced redistribution: hold bedtime at 19:00, flex within these bounds.
+	targetBedtime: '19:00',
+	// length napCount + 1 (before each nap, then bed).
+	wakeWindowMin: [90, 105, 120, 135],
+	wakeWindowMax: [150, 165, 180, 210],
+	// length napCount.
+	napDurationMin: [30, 45, 20],
+	napDurationMax: [90, 120, 75]
 };
 
 /** Ensure the single settings row exists; returns nothing. */

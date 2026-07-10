@@ -76,17 +76,24 @@ rolling to the next day if it lands before the last wake.
   during redistribution (done in this pass; verify wording still matches the
   final implementation).
 
-### Status
+### Status — ✅ COMPLETE (2026-07-10)
 
 - **Engine DONE** (2026-07-10). `src/lib/projection/{types,project}.ts` implement
   the redistribution (fixed target bedtime, per-position bounds, wake-window
   priority, nap-drop→merge-into-night), gated behind `targetBedtime`; absent it,
-  the legacy cascade is byte-identical. 7 new tests in `project.spec.ts` (29 total
+  the legacy cascade is byte-identical. Tests in `project.spec.ts` (29 total
   green); check/lint/build clean.
-- **Wiring TODO** — the new `TemplateConfig` fields are optional and **not yet
-  carried** by `schema.ts`, `parseTemplate`, `queries/templates.ts`,
-  `buildProjection`, or the `/templates` UI, so redistribution is dormant in the
-  running app. See `BACKLOG.md` (2026-07-10) for the exact threading list.
+- **Wiring DONE** (2026-07-10). The `TemplateConfig` fields are now carried
+  end-to-end: `schema.ts` + migration `drizzle/0001_flat_hydra.sql`
+  (`target_bedtime`, `wake_window_min/max`, `nap_duration_min/max` on both
+  `template` and `active_template`), `parseTemplate` validation (array-length +
+  `min ≤ max` + non-negative), `queries/templates.ts` DTO/`columns()`,
+  `buildProjection`, the seed example (19:00 target + bounds), and the
+  `/templates` editor (target-bedtime input + a "Redistribution bounds" section).
+  Verified live: seeded template projects bedtime at **19:00** (redistributed);
+  clearing the target reverts to the **19:45** legacy cascade. Gates green
+  (check/lint/test/build); smoke suite 10/10. Remaining polish (1-min rounding
+  drift, existing-install upgrade, non-integer bounds) is in `BACKLOG.md`.
 
 ### Still open (decide before/while building)
 

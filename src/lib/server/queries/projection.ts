@@ -22,6 +22,11 @@ export function buildProjection(now: number, timeZone: string): Projection {
 			napCount: template.napCount,
 			wakeWindows: template.wakeWindows,
 			expectedNapDurations: template.expectedNapDurations,
+			targetBedtime: template.targetBedtime,
+			wakeWindowMin: template.wakeWindowMin ?? undefined,
+			wakeWindowMax: template.wakeWindowMax ?? undefined,
+			napDurationMin: template.napDurationMin ?? undefined,
+			napDurationMax: template.napDurationMax ?? undefined,
 			daytimeCap: template.daytimeCap,
 			dailyTotalSleepTarget: template.dailyTotalSleepTarget
 		},

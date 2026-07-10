@@ -89,6 +89,68 @@
 			>
 		</label>
 
+		<label class="block text-xs font-medium opacity-70">
+			Target bedtime
+			<input
+				type="time"
+				name="targetBedtime"
+				value={active.targetBedtime ?? ''}
+				class={inputClass}
+			/>
+			<span class="mt-0.5 block text-[0.6875rem] font-normal opacity-50"
+				>Set it to redistribute remaining sleeps onto a fixed bedtime. Leave empty for the sliding
+				cascade.</span
+			>
+		</label>
+
+		<details class="text-xs">
+			<summary class="cursor-pointer font-medium opacity-70"
+				>Redistribution bounds (optional)</summary
+			>
+			<div class="mt-2 space-y-3">
+				<p class="text-[0.6875rem] font-normal opacity-50">
+					Min/max minutes per position, comma-separated. Windows need {active.napCount + 1} values, naps
+					need {active.napCount}. Leave empty for unbounded. Only used when a target bedtime is set.
+				</p>
+				<div class="grid grid-cols-2 gap-3">
+					<label class="block font-medium opacity-70">
+						Wake window min
+						<input
+							name="wakeWindowMin"
+							value={active.wakeWindowMin?.join(', ') ?? ''}
+							class={inputClass}
+						/>
+					</label>
+					<label class="block font-medium opacity-70">
+						Wake window max
+						<input
+							name="wakeWindowMax"
+							value={active.wakeWindowMax?.join(', ') ?? ''}
+							class={inputClass}
+						/>
+					</label>
+				</div>
+				<div class="grid grid-cols-2 gap-3">
+					<label class="block font-medium opacity-70">
+						Nap duration min
+						<input
+							name="napDurationMin"
+							value={active.napDurationMin?.join(', ') ?? ''}
+							class={inputClass}
+						/>
+					</label>
+					<label class="block font-medium opacity-70">
+						Nap duration max
+						<input
+							name="napDurationMax"
+							value={active.napDurationMax?.join(', ') ?? ''}
+							class={inputClass}
+						/>
+					</label>
+				</div>
+			</div>
+		</details>
+
 		<details class="text-xs">
 			<summary class="cursor-pointer font-medium opacity-70">Reference budget (optional)</summary>
 			<div class="mt-2 space-y-3">

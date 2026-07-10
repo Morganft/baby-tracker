@@ -38,6 +38,11 @@ function toTemplateDTO(row: TemplateRow): TemplateDTO {
 		daytimeCap: row.daytimeCap ?? null,
 		bedtimeStart: row.bedtimeStart ?? null,
 		bedtimeEnd: row.bedtimeEnd ?? null,
+		targetBedtime: row.targetBedtime ?? null,
+		wakeWindowMin: row.wakeWindowMin ?? null,
+		wakeWindowMax: row.wakeWindowMax ?? null,
+		napDurationMin: row.napDurationMin ?? null,
+		napDurationMax: row.napDurationMax ?? null,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime()
 	};
@@ -61,7 +66,12 @@ function columns(input: TemplateInput) {
 		dailyTotalSleepTarget: input.dailyTotalSleepTarget,
 		daytimeCap: input.daytimeCap,
 		bedtimeStart: input.bedtimeStart,
-		bedtimeEnd: input.bedtimeEnd
+		bedtimeEnd: input.bedtimeEnd,
+		targetBedtime: input.targetBedtime,
+		wakeWindowMin: input.wakeWindowMin,
+		wakeWindowMax: input.wakeWindowMax,
+		napDurationMin: input.napDurationMin,
+		napDurationMax: input.napDurationMax
 	};
 }
 

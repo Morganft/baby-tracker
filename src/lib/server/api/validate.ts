@@ -148,12 +148,36 @@ export interface TemplateInput {
 	daytimeCap: number | null;
 	bedtimeStart: string | null;
 	bedtimeEnd: string | null;
+	/** Enforced day-anchor bedtime; when set, the projected tail redistributes to it. */
+	targetBedtime: string | null;
+	/** Per-position redistribution bounds (minutes); null → unbounded everywhere. */
+	wakeWindowMin: number[] | null;
+	wakeWindowMax: number[] | null;
+	napDurationMin: number[] | null;
+	napDurationMax: number[] | null;
 }
 
 function hhmmOrNull(v: unknown, name: string): string | null {
 	if (v == null) return null;
 	if (typeof v !== 'string' || !HHMM.test(v)) throw error(400, `${name} must be 'HH:MM'`);
 	return v;
+}
+
+/** Validate an optional bounds array: null, or non-negative numbers of `len`. */
+function boundArrayOrNull(v: unknown, name: string, len: number): number[] | null {
+	if (v == null) return null;
+	const arr = numberArray(v, name);
+	if (arr.length !== len) throw error(400, `${name} must have length ${len}`);
+	if (arr.some((n) => n < 0)) throw error(400, `${name} values must be ≥ 0`);
+	return arr;
+}
+
+/** Fail if any `min[i]` exceeds `max[i]` (only where both bounds are present). */
+function assertMinMax(min: number[] | null, max: number[] | null, name: string): void {
+	if (!min || !max) return;
+	for (let i = 0; i < min.length; i++) {
+		if (min[i] > max[i]) throw error(400, `${name} min must be ≤ max at position ${i}`);
+	}
 }
 
 /** Validate a full template body (create, or overwrite of a library template). */
@@ -171,6 +195,12 @@ export function parseTemplate(body: unknown): TemplateInput {
 	if (typeof b.referenceWakeTime !== 'string' || !HHMM.test(b.referenceWakeTime)) {
 		throw error(400, "referenceWakeTime must be 'HH:MM'");
 	}
+	const wakeWindowMin = boundArrayOrNull(b.wakeWindowMin, 'wakeWindowMin', napCount + 1);
+	const wakeWindowMax = boundArrayOrNull(b.wakeWindowMax, 'wakeWindowMax', napCount + 1);
+	const napDurationMin = boundArrayOrNull(b.napDurationMin, 'napDurationMin', napCount);
+	const napDurationMax = boundArrayOrNull(b.napDurationMax, 'napDurationMax', napCount);
+	assertMinMax(wakeWindowMin, wakeWindowMax, 'wakeWindow');
+	assertMinMax(napDurationMin, napDurationMax, 'napDuration');
 	return {
 		name: str(b.name, 'name'),
 		referenceWakeTime: b.referenceWakeTime,
@@ -183,7 +213,12 @@ export function parseTemplate(body: unknown): TemplateInput {
 				: intMin(b.dailyTotalSleepTarget, 'dailyTotalSleepTarget', 0),
 		daytimeCap: b.daytimeCap == null ? null : intMin(b.daytimeCap, 'daytimeCap', 0),
 		bedtimeStart: hhmmOrNull(b.bedtimeStart, 'bedtimeStart'),
-		bedtimeEnd: hhmmOrNull(b.bedtimeEnd, 'bedtimeEnd')
+		bedtimeEnd: hhmmOrNull(b.bedtimeEnd, 'bedtimeEnd'),
+		targetBedtime: hhmmOrNull(b.targetBedtime, 'targetBedtime'),
+		wakeWindowMin,
+		wakeWindowMax,
+		napDurationMin,
+		napDurationMax
 	};
 }
 
