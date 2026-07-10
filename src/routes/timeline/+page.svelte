@@ -50,20 +50,27 @@
 		return out;
 	});
 
+	// Breathing room (in ms) above the first wake and below bedtime. The bottom
+	// pad also gives the open-ended night sleep a visible block to render into.
+	const PAD_MS = 30 * 60_000;
+
 	// Day span: from the anchor (morning wake / reference) to the last sleep's end
-	// or start, widened to always include `now`.
+	// or start, widened to always include `now` and padded slightly at both ends.
 	const bounds = $derived.by(() => {
 		const ends = sleeps.map((s) => s.projectedEnd ?? s.start);
 		const starts = sleeps.map((s) => s.start);
-		const start = Math.min(data.projection.anchor, nowMs, ...starts);
-		const end = Math.max(data.projection.anchor, nowMs, ...ends);
+		const start = Math.min(data.projection.anchor, nowMs, ...starts) - PAD_MS;
+		const end = Math.max(data.projection.anchor, nowMs, ...ends) + PAD_MS;
 		// Guard against a zero span (no sleeps yet) so the scale stays finite.
 		return { start, end: end > start ? end : start + 3_600_000 };
 	});
 
 	const PX_PER_MIN = 1.4;
+	// Extra pixels below the last marker; the open-ended bedtime block extends into
+	// this so its faded edge meets the container bottom (no floating gap).
+	const BOTTOM_PAD_PX = 24;
 	const pos = (epoch: number) => ((epoch - bounds.start) / 60_000) * PX_PER_MIN;
-	const height = $derived(pos(bounds.end) + 24);
+	const height = $derived(pos(bounds.end) + BOTTOM_PAD_PX);
 
 	// On-the-hour gridlines across the span (local wall-clock hours).
 	const ticks = $derived.by(() => {
@@ -75,6 +82,14 @@
 	});
 
 	const nowInRange = $derived(nowMs >= bounds.start && nowMs <= bounds.end);
+
+	// Overnight block (top pad): the tail of last night's sleep, ending at the
+	// anchor (morning wake) and filling the pad above it.
+	const overnight = $derived.by(() => {
+		const top = pos(data.projection.anchor - PAD_MS);
+		const end = pos(data.projection.anchor);
+		return { top, height: Math.max(end - top, 22), wake: data.projection.anchor };
+	});
 
 	const statusStyle: Record<string, string> = {
 		completed: 'border-indigo-500/40 bg-indigo-500/25',
@@ -124,6 +139,16 @@
 			</div>
 		{/each}
 
+		<!-- Overnight sleep: the tail of last night's sleep the day woke from,
+		     rendered into the top pad, ending at the anchor (morning wake). -->
+		<div
+			class="absolute right-0 left-14 flex flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/25 px-3 pb-1.5"
+			style="top: {overnight.top}px; height: {overnight.height}px"
+		>
+			<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">🌙 Overnight</p>
+			<p class="truncate text-xs opacity-70">woke {time(overnight.wake)}</p>
+		</div>
+
 		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start -->
 		{#each windows as w (w.start)}
 			{@const top = pos(w.start)}
@@ -147,17 +172,22 @@
 		{#each sleeps as s, i (s.index)}
 			{@const top = pos(s.start)}
 			{#if s.type === 'night'}
-				<!-- Bedtime: a marker line (no fixed end while it's the day's close). -->
-				<div class="absolute right-0 left-14 flex items-center gap-2" style="top: {top}px">
-					<span class="h-px flex-1 bg-indigo-500/40"></span>
-					<span
-						class="rounded-md bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:text-indigo-300"
-					>
-						🌙 {typeLabel(s.type, i)} · {time(s.start)}
-						{#if s.status === 'projected'}<span class="font-normal opacity-60">
-								(planned)</span
-							>{/if}
-					</span>
+				<!-- Bedtime: open-ended (the day's close), rendered as a block that
+				     fills the bottom pad below its start. -->
+				{@const end = s.projectedEnd ?? s.start + PAD_MS}
+				{@const h = Math.max(pos(end) - top, 22) + BOTTOM_PAD_PX}
+				<div
+					class="absolute right-0 left-14 flex flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 {s.status ===
+					'projected'
+						? 'border-dashed border-indigo-400/60'
+						: 'border-indigo-500/40'}"
+					style="top: {top}px; height: {h}px"
+				>
+					<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+						🌙 {typeLabel(s.type, i)}
+						{#if s.status === 'projected'}<span class="font-normal opacity-60"> · planned</span>{/if}
+					</p>
+					<p class="truncate text-xs opacity-70">{time(s.start)}</p>
 				</div>
 			{:else}
 				{@const end = s.projectedEnd ?? s.start}
