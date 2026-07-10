@@ -113,5 +113,9 @@ export interface Projection {
 		daytimeCapMin: number | null;
 		totalTargetMin: number | null;
 		napsCompleted: number;
+		/** Awake time elapsed since the anchor so far (= elapsed − daytime sleep). */
+		wakeUsedMin: number;
+		/** Planned total awake time for the day = sum of the template wake windows. */
+		wakeBudgetMin: number;
 	};
 }

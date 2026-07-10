@@ -227,6 +227,7 @@ export interface SettingsUpdate {
 	shortNapReductionPercent?: number;
 	clock24h?: boolean;
 	trackTimezone?: boolean;
+	dayStartTime?: string;
 }
 
 function bool(v: unknown, name: string): boolean {
@@ -247,6 +248,12 @@ export function parseSettingsUpdate(body: unknown): SettingsUpdate {
 	}
 	if ('clock24h' in b) out.clock24h = bool(b.clock24h, 'clock24h');
 	if ('trackTimezone' in b) out.trackTimezone = bool(b.trackTimezone, 'trackTimezone');
+	if ('dayStartTime' in b) {
+		if (typeof b.dayStartTime !== 'string' || !HHMM.test(b.dayStartTime)) {
+			throw error(400, "dayStartTime must be 'HH:MM'");
+		}
+		out.dayStartTime = b.dayStartTime;
+	}
 	if (Object.keys(out).length === 0) throw error(400, 'No updatable fields provided');
 	return out;
 }

@@ -360,6 +360,11 @@ export function project(input: ProjectionInput): Projection {
 		elapsedMin: Math.max(0, msToMinutes(now - since))
 	};
 
+	// Awake budget: planned total awake time is the sum of the template's wake
+	// windows; used so far is the day's elapsed time minus daytime sleep.
+	const wakeBudgetMin = wakeWindows.reduce((a, b) => a + b, 0);
+	const wakeUsedMin = Math.max(0, Math.round(msToMinutes(now - anchor) - daytimeUsedMin));
+
 	return {
 		anchor,
 		anchorIsActual,
@@ -370,7 +375,9 @@ export function project(input: ProjectionInput): Projection {
 			daytimeUsedMin: Math.round(daytimeUsedMin),
 			daytimeCapMin: template.daytimeCap ?? null,
 			totalTargetMin: template.dailyTotalSleepTarget ?? null,
-			napsCompleted
+			napsCompleted,
+			wakeUsedMin,
+			wakeBudgetMin
 		}
 	};
 }

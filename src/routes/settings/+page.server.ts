@@ -19,6 +19,7 @@ export const actions: Actions = {
 				parseSettingsUpdate({
 					shortNapThresholdMin: num(b.get('shortNapThresholdMin')),
 					shortNapReductionPercent: num(b.get('shortNapReductionPercent')),
+					dayStartTime: String(b.get('dayStartTime') ?? ''),
 					// Unchecked checkboxes are absent from the form data.
 					clock24h: b.get('clock24h') === 'on',
 					trackTimezone: b.get('trackTimezone') === 'on'

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { fmtTime, fmtDuration, toDateTimeInput } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
@@ -21,7 +22,15 @@
 </script>
 
 <section class="space-y-5">
-	<h2 class="text-xl font-semibold">History</h2>
+	<div class="flex items-center justify-between">
+		<h2 class="text-xl font-semibold">History</h2>
+		<a
+			href={resolve('/add?from=/history')}
+			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
+		>
+			+ Add sleep
+		</a>
+	</div>
 
 	{#if form && 'message' in form && form.message}
 		<p class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">

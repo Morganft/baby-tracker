@@ -165,6 +165,23 @@ describe('project — normal day in progress', () => {
 	});
 });
 
+describe('project — awake budget', () => {
+	it('sums the template windows and counts awake time as elapsed − daytime sleep', () => {
+		const sleeps = [nap('n1', '09:00', '10:30'), nap('n2', '13:00', '14:00')];
+		const p = project(build({ morningWake: at('07:00'), now: at('15:00'), sleeps }));
+
+		// Planned awake budget = 120 + 150 + 240.
+		expect(p.budget.wakeBudgetMin).toBe(510);
+		// Elapsed 07:00→15:00 = 480m, minus 150m of naps = 330m awake so far.
+		expect(p.budget.wakeUsedMin).toBe(330);
+	});
+
+	it('never goes negative before the anchor', () => {
+		const p = project(build({ now: at('06:30') })); // before the 07:00 anchor
+		expect(p.budget.wakeUsedMin).toBe(0);
+	});
+});
+
 describe('project — fixed-bedtime redistribution', () => {
 	// A template whose windows + expected naps sum to 660m (07:00 → 18:00), with
 	// per-position bounds, so redistribution has room to flex before clamping.

@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `day_start_time` text DEFAULT '07:00' NOT NULL;

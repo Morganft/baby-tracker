@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { fmtTime, fmtDuration, toTimeInput } from '$lib/format';
 	import type { PageData } from './$types';
 
@@ -20,6 +21,24 @@
 	const time = (e: number) => fmtTime(e, tz, data.clock24h);
 
 	const sleeps = $derived(data.projection.sleeps);
+
+	// Wake-window segments: the awake gap leading into each sleep, labelled with
+	// its duration (actual for logged sleeps, template/redistributed otherwise).
+	const windows = $derived.by(() => {
+		const out: { mid: number; min: number; reduced: boolean }[] = [];
+		let cursor = data.projection.anchor;
+		for (const s of sleeps) {
+			if (s.start > cursor) {
+				out.push({
+					mid: (cursor + s.start) / 2,
+					min: s.wakeWindowBeforeMin,
+					reduced: s.wakeWindowReduced
+				});
+			}
+			cursor = s.projectedEnd ?? s.end ?? s.start;
+		}
+		return out;
+	});
 
 	// Day span: from the anchor (morning wake / reference) to the last sleep's end
 	// or start, widened to always include `now`.
@@ -57,9 +76,14 @@
 </script>
 
 <section class="space-y-4">
-	<div class="flex items-baseline justify-between">
+	<div class="flex items-center justify-between">
 		<h2 class="text-xl font-semibold">Today</h2>
-		<span class="text-xs opacity-50">planned vs. actual</span>
+		<a
+			href={resolve('/add?from=/timeline')}
+			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
+		>
+			+ Add sleep
+		</a>
 	</div>
 
 	<div class="flex gap-3 text-xs opacity-70">
@@ -82,6 +106,21 @@
 					>{time(t)}</span
 				>
 				<span class="ml-2 h-px flex-1 bg-black/5 dark:bg-white/5"></span>
+			</div>
+		{/each}
+
+		<!-- Wake-window labels, centred in the awake gaps between sleeps -->
+		{#each windows as w (w.mid)}
+			<div
+				class="absolute right-0 left-14 flex -translate-y-1/2 items-center justify-center"
+				style="top: {pos(w.mid)}px"
+			>
+				<span
+					class="rounded-full bg-black/[0.04] px-2 py-0.5 text-[0.6875rem] text-black/50 dark:bg-white/[0.06] dark:text-white/50"
+				>
+					{fmtDuration(w.min)} awake{#if w.reduced}
+						· short{/if}
+				</span>
 			</div>
 		{/each}
 

@@ -2,6 +2,12 @@
 
 Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it can wait>`.
 
+## 2026-07-10 — UI fixes (wake windows, day-start, awake budget, Add)
+
+- [budget] The home "Awake today" tile computes awake = elapsed-since-anchor − daytime sleep, which does **not** subtract a logged night sleep. Accurate through the active day; once tonight's bedtime is logged the figure keeps climbing (counts night-sleep as awake). Subtract in-progress/completed night-sleep elapsed if it ever shows oddly after bedtime.
+- [templates] The live projection now anchors on the global `dayStartTime` setting (via `buildProjection`), so the template editor's per-template `referenceWakeTime` no longer affects the active slot — it's library metadata only now. Relabel/hide it in `/templates`, or consolidate the two, to avoid confusing "why doesn't changing the template wake time move my day" reports.
+- [add] Manual add (`/add`) captures the server timezone like the quick-log, with no per-entry tz picker. Consistent with the rest of the app; add a picker only if hand-entering travel days becomes a need.
+
 ## 2026-07-10 — Fixed-bedtime redistribution (projection engine)
 
 - [wiring] ✅ DONE (2026-07-10). The redistribution is now reachable at runtime: `schema.ts` + Drizzle migration `0001_flat_hydra.sql` carry `target_bedtime` + the four bound columns, `parseTemplate` validates them (length + `min ≤ max` + non-negative), `queries/templates.ts` round-trips them, `buildProjection` threads them into `project()`, the seed example ships a 19:00 target + bounds, and the `/templates` editor sets all five. Verified live: seeded active template projects bedtime at 19:00 (redistributed); clearing `target_bedtime` reverts to the 19:45 legacy cascade.

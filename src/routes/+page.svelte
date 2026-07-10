@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { resolveClockTime } from '$lib/projection/time';
 	import type { PageData, ActionData } from './$types';
 
@@ -71,6 +72,15 @@
 </script>
 
 <section class="space-y-4">
+	<div class="flex justify-end">
+		<a
+			href={resolve('/add?from=/')}
+			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
+		>
+			+ Add sleep
+		</a>
+	</div>
+
 	<!-- Current state -->
 	<div
 		class="rounded-2xl border p-5 {asleep
@@ -161,6 +171,16 @@
 		</div>
 		<div
 			class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+		>
+			<p class="text-xs opacity-60">Awake today</p>
+			<p class="mt-1 text-xl font-semibold">
+				{fmtDuration(budget.wakeUsedMin)}<span class="text-sm font-normal opacity-50">
+					/ {fmtDuration(budget.wakeBudgetMin)}</span
+				>
+			</p>
+		</div>
+		<div
+			class="col-span-2 rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
 		>
 			<p class="text-xs opacity-60">Naps done</p>
 			<p class="mt-1 text-xl font-semibold">{budget.napsCompleted}</p>
