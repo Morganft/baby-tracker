@@ -7,6 +7,102 @@ Last updated: 2026-07-09 · Starting point: commit `a3083d9` (initial scaffold)
 Read `REQUIREMENTS.md` for the full spec and `CLAUDE.md` for the Docker-only
 workflow (no host Node). This doc is just the ordered build plan from here.
 
+## ▶ REQUESTED CHANGE — conserve the wake+nap budget when re-projecting (next up)
+
+### The problem
+
+Today the cascade slides. When a nap is logged **later** than planned (a longer
+actual WW1, or a later start), the remaining projected sleeps each keep their
+**full template wake windows**, so the whole rest of the day shifts later by the
+same amount and the **total planned awake time grows** — bedtime drifts.
+
+Where this lives: `src/lib/projection/project.ts`, the projected branch (~L97–114).
+A projected sleep is `lastWake + minutesToMs(wakeWindows[index])`, and `lastWake`
+is the _actual_ end of the previous logged sleep. Nothing pulls the tail of the
+day back toward a fixed bedtime — the template windows are applied verbatim.
+
+### Desired behaviour
+
+When re-projecting the remaining sleeps after a log, **recalculate** all
+remaining wake windows and nap durations so the **total planned wake time + nap
+time stays the same** (i.e. the target bedtime stays put) instead of every
+sleep shifting by a fixed delta. Redistribute the surplus/deficit across what's
+left of the day.
+
+This requires bounds, so the redistribution stays sane:
+
+- **Min/max length per wake window** and **min/max length per nap**, both
+  **per-position arrays** (a min/max for each of the `napCount + 1` windows and
+  each of the `napCount` naps — not a single global bound). Clamp each
+  recalculated value to its own bounds.
+- **Wake windows take priority over naps.** The wake-window budget matters more
+  than the nap budget: hold windows at their template targets as far as their
+  bounds allow, and absorb the surplus/deficit into **nap durations** first.
+  Only flex windows (within their min/max) once naps are pinned at a bound.
+- **Nap-drop fallback → merge into the night.** If the naps still can't fit
+  within bounds, **drop a nap**; the dropped nap is **absorbed into the night
+  sleep** (the night can be counted as the sleep that "replaces" it — bedtime
+  effectively moves earlier for that unit). Re-distribute across the rest.
+
+### What is conserved — DECIDED: anchor to a fixed target bedtime
+
+Redistribution holds a **fixed target bedtime** (a wall-clock `'HH:MM'`, the day
+anchor for the tail). On each re-project, distribute the interval from the last
+actual wake to that target bedtime across the _remaining_ wake windows + naps
+(proportional to their template shares), each clamped to min/max; if they can't
+fit, drop a nap (below). The target bedtime does **not** move.
+
+Implication: projection now needs a **real bedtime field**. Today
+`bedtime_start/end` are `'HH:MM'` **reference only** (schema.ts L42–43). Decide:
+promote `bedtime_start` to the projection anchor, or add a dedicated
+`target_bedtime` `'HH:MM'`. Resolve it to epoch-ms on the anchor's calendar day
+via `resolveClockTime(hhmm, anchor, timeZone)` (already in `projection/time.ts`),
+rolling to the next day if it lands before the last wake.
+
+### Decided
+
+- **Bounds are per-position arrays.** New per-template config:
+  `wake_window_min[]` / `wake_window_max[]` (length `napCount + 1`) and
+  `nap_duration_min[]` / `nap_duration_max[]` (length `napCount`). Needs
+  `schema.ts` + a Drizzle migration (`npm run db:generate`), plus `TemplateConfig`
+  in `src/lib/projection/types.ts`, `parseTemplate` validation, and the
+  `/templates` editor UI.
+- **Priority: wake windows over naps** (see Desired behaviour) — flex naps first,
+  windows only once naps are pinned at a bound.
+- **Drop rule:** drop a nap and **merge it into the night sleep** (bedtime for
+  that unit moves earlier); cascade the drop if still infeasible.
+- **REQUIREMENTS.md now enforces budgets** — §5.5 and the closing "reference-only"
+  line were rewritten so the target bedtime + min/max bounds are **enforced**
+  during redistribution (done in this pass; verify wording still matches the
+  final implementation).
+
+### Status
+
+- **Engine DONE** (2026-07-10). `src/lib/projection/{types,project}.ts` implement
+  the redistribution (fixed target bedtime, per-position bounds, wake-window
+  priority, nap-drop→merge-into-night), gated behind `targetBedtime`; absent it,
+  the legacy cascade is byte-identical. 7 new tests in `project.spec.ts` (29 total
+  green); check/lint/build clean.
+- **Wiring TODO** — the new `TemplateConfig` fields are optional and **not yet
+  carried** by `schema.ts`, `parseTemplate`, `queries/templates.ts`,
+  `buildProjection`, or the `/templates` UI, so redistribution is dormant in the
+  running app. See `BACKLOG.md` (2026-07-10) for the exact threading list.
+
+### Still open (decide before/while building)
+
+- Exactly **which** nap to drop when several remaining (last remaining is the
+  simplest; revisit if it produces bad schedules).
+- Whether redistribution is always-on or a per-template toggle (default: on).
+
+### Implementation sketch
+
+- Keep the logic **pure** in `src/lib/projection/project.ts`; the redistribution
+  is a transform over the still-`projected` tail after the last logged sleep.
+- Add the new bounds (+ bedtime target inputs) to `types.ts`, thread them from
+  `schema.ts` → `queries/projection.ts` → `project()`.
+- Cover with new cases in `project.spec.ts`: late first nap (bedtime held),
+  clamp hit, and infeasible → nap dropped. `npm run test` is the gate.
+
 ## Where things stand
 
 Scaffold is complete and verified (typecheck, lint, build, boot, migrations,

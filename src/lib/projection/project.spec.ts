@@ -165,6 +165,140 @@ describe('project — normal day in progress', () => {
 	});
 });
 
+describe('project — fixed-bedtime redistribution', () => {
+	// A template whose windows + expected naps sum to 660m (07:00 → 18:00), with
+	// per-position bounds, so redistribution has room to flex before clamping.
+	const bounded: TemplateConfig = {
+		referenceWakeTime: '07:00',
+		napCount: 2,
+		wakeWindows: [120, 150, 240],
+		expectedNapDurations: [90, 60],
+		targetBedtime: '18:00',
+		wakeWindowMin: [60, 60, 120],
+		wakeWindowMax: [180, 210, 300],
+		napDurationMin: [30, 30],
+		napDurationMax: [120, 120],
+		daytimeCap: 240,
+		dailyTotalSleepTarget: 840
+	};
+
+	function buildB(overrides: Partial<ProjectionInput>): ProjectionInput {
+		return {
+			now: at('07:00'),
+			timeZone: TZ,
+			template: bounded,
+			settings,
+			sleeps: [],
+			...overrides
+		};
+	}
+
+	/** Minutes between a projected sleep's start and its projected end. */
+	function durMin(s: { start: number; projectedEnd: number | null }) {
+		return ((s.projectedEnd as number) - s.start) / 60000;
+	}
+
+	it('lands exactly on the target bedtime when the template is consistent', () => {
+		const p = project(buildB({ morningWake: at('07:00'), now: at('07:05') }));
+		const [n1, n2, bed] = p.sleeps;
+		expect(bed.type).toBe('night');
+		expect(bed.start).toBe(at('18:00'));
+		// delta is zero, so naps keep their expected durations.
+		expect(durMin(n1)).toBe(90);
+		expect(durMin(n2)).toBe(60);
+	});
+
+	it('holds the target bedtime on a late nap instead of sliding it', () => {
+		const sleeps = [nap('n1', '09:30', '11:00')]; // 30m late start, 90m nap
+		const p = project(buildB({ morningWake: at('07:00'), now: at('11:05'), sleeps }));
+
+		const bed = p.sleeps[2];
+		expect(bed.type).toBe('night');
+		expect(bed.start).toBe(at('18:00')); // still 18:00, not pushed later
+		// The remaining nap absorbs the lateness (90 → 30), windows stay on target.
+		expect(durMin(p.sleeps[1])).toBe(30);
+		expect(p.sleeps[1].wakeWindowBeforeMin).toBe(150);
+
+		// Contrast: the legacy cascade (no target bedtime) drifts to 18:30.
+		const legacy = project(
+			buildB({
+				morningWake: at('07:00'),
+				now: at('11:05'),
+				sleeps,
+				template: { ...bounded, targetBedtime: undefined }
+			})
+		);
+		expect(legacy.sleeps[2].start).toBe(at('18:30'));
+	});
+
+	it('pins naps at their minimum before flexing the wake windows', () => {
+		const sleeps = [nap('n1', '11:00', '12:30')]; // very late
+		const p = project(buildB({ morningWake: at('07:00'), now: at('12:35'), sleeps }));
+
+		const [, n2, bed] = p.sleeps;
+		expect(durMin(n2)).toBe(30); // nap pinned at its minimum first
+		// Only then do the windows shrink below their targets (150, 240).
+		expect(n2.wakeWindowBeforeMin).toBe(111);
+		expect(bed.wakeWindowBeforeMin).toBe(189);
+		expect(bed.start).toBe(at('18:00'));
+	});
+
+	it('drops a nap (merging it into the night) when the naps cannot fit', () => {
+		const p = project(
+			buildB({
+				morningWake: at('07:00'),
+				now: at('07:05'),
+				template: { ...bounded, targetBedtime: '11:30' }
+			})
+		);
+		// Two naps cannot fit before 11:30 at their minima → one is dropped.
+		expect(p.sleeps).toHaveLength(2);
+		expect(p.sleeps[0].type).toBe('nap');
+		expect(p.sleeps[0].start).toBe(at('08:00')); // 07:00 + 60m min window
+		expect(p.sleeps[1].type).toBe('night');
+		expect(p.sleeps[1].start).toBe(at('11:30'));
+		expect(p.sleeps[1].wakeWindowBeforeMin).toBe(180); // merged pre-bed window
+	});
+
+	it('falls short of an unreachable late bedtime without dropping a nap', () => {
+		const p = project(
+			buildB({
+				morningWake: at('07:00'),
+				now: at('07:05'),
+				template: { ...bounded, targetBedtime: '23:00' }
+			})
+		);
+		const [n1, n2, bed] = p.sleeps;
+		// Everything maxes out; the night lands earlier than the (unreachable) target.
+		expect(durMin(n1)).toBe(120);
+		expect(durMin(n2)).toBe(120);
+		expect(bed.wakeWindowBeforeMin).toBe(300);
+		expect(bed.start).toBe(at('22:30')); // 07:00 + 690 windows + 240 naps
+		expect(p.sleeps).toHaveLength(3); // no nap dropped
+	});
+
+	it('lets a too-short nap reduce the next window, then flexes it in', () => {
+		const sleeps = [nap('n1', '09:00', '09:10')]; // 10m ≤ 15 → short-nap rule
+		const p = project(buildB({ morningWake: at('07:00'), now: at('09:15'), sleeps }));
+
+		const n2 = p.sleeps[1];
+		expect(n2.wakeWindowReduced).toBe(true); // reduction still recorded
+		expect(durMin(n2)).toBe(120); // nap maxes out absorbing the surplus first
+		expect(p.sleeps[2].start).toBe(at('18:00')); // bedtime still held
+	});
+
+	it('disables redistribution once bedtime is logged (legacy cascade)', () => {
+		const sleeps = [
+			nap('n1', '09:00', '10:30'),
+			nap('n2', '13:00', '14:00'),
+			{ id: 'night', type: 'night' as const, start: at('18:00'), end: null }
+		];
+		const p = project(buildB({ morningWake: at('07:00'), now: at('18:05'), sleeps }));
+		expect(p.sleeps[2].status).toBe('in-progress');
+		expect(p.nextSleep).toBeNull();
+	});
+});
+
 describe('project — logged bedtime', () => {
 	it('marks the night sleep completed and reports no next sleep', () => {
 		const sleeps = [

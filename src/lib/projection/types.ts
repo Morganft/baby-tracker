@@ -12,6 +12,22 @@ export interface TemplateConfig {
 	wakeWindows: number[];
 	/** Reference durations for not-yet-happened naps: length `napCount`. */
 	expectedNapDurations: number[];
+	/**
+	 * Target bedtime, 'HH:MM' local. When set (and tonight's bedtime isn't logged
+	 * yet), the remaining projected sleeps are **redistributed** to land on this
+	 * fixed time instead of sliding — see REQUIREMENTS §5.2. Absent → legacy cascade.
+	 */
+	targetBedtime?: string | null;
+	/**
+	 * Per-position min/max bounds (minutes) enforced during redistribution.
+	 * `wakeWindow*` align with `wakeWindows` (length `napCount + 1`);
+	 * `napDuration*` align with `expectedNapDurations` (length `napCount`).
+	 * Missing entries default to unbounded (0 … +∞).
+	 */
+	wakeWindowMin?: number[];
+	wakeWindowMax?: number[];
+	napDurationMin?: number[];
+	napDurationMax?: number[];
 	/** Reference-only budgets (never alter projected times). */
 	daytimeCap?: number | null;
 	dailyTotalSleepTarget?: number | null;

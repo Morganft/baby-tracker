@@ -2,6 +2,13 @@
 
 Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it can wait>`.
 
+## 2026-07-10 — Fixed-bedtime redistribution (projection engine)
+
+- [wiring] The engine's redistribution is **not reachable at runtime yet**. `TemplateConfig` gained `targetBedtime` + per-position `wakeWindowMin/Max` and `napDurationMin/Max`, but `schema.ts`, `parseTemplate` (validate.ts), `queries/templates.ts` `columns()`/DTOs, and `buildProjection` don't carry them, and the `/templates` editor can't set them. Until wired, `project()` runs the legacy cascade (all new fields default to unbounded / undefined). Next step: schema columns + Drizzle migration, validation (with `min ≤ max` and array-length checks), query threading, seed an example with bounds, and a template-editor UI for the four bound arrays + target bedtime.
+- [engine] The redistribute prefix re-implements the legacy branch's logged-nap handling (~30 lines, `project.ts`). Kept separate deliberately so the legacy path stays byte-identical; fold into a shared helper once both paths are stable.
+- [engine] Each redistributed window/nap is rounded independently, so the projected night can land 1–2 min off the exact target bedtime. Spec only requires "≈"; tighten (distribute the rounding remainder into the final window) if the drift ever shows in the UI.
+- [engine] When only _some_ positions provide a max bound, `distribute` dumps all surplus into the unbounded item(s) and ignores finite-headroom peers — lopsided but harmless. A non-issue once the UI always supplies full bound arrays.
+
 ## 2026-07-09 — Step 2 (data access + JSON API)
 
 - [api] `PATCH /api/sleeps/[id]` doesn't enforce `endTime ≥ startTime` the way create does — an edit could produce a negative-duration entry (engine would misread it as a too-short nap). Not on the happy path; the Step-3 edit UI will constrain times. Fix needs the stored row for the cross-field check.
