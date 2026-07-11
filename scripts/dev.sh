@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run a command inside the node:22 container with the repo mounted (the host has
-# no Node — see CLAUDE.md). The --user mapping keeps generated files owned by you.
+# no Node — see AGENTS.md). The --user mapping keeps generated files owned by you.
 #
 # Usage:
 #   scripts/dev.sh 'npm run check'

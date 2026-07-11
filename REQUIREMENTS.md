@@ -1,6 +1,6 @@
 # Baby Sleep Tracker — Requirements
 
-Status: **v1 scope agreed** · Last updated: 2026-07-09
+Status: **v1 scope agreed** · Last updated: 2026-07-11
 
 A self-hosted, phone-first web app for tracking a baby's sleep **against a
 planned schedule**. Unlike typical trackers that only _record_ sleep, this app
@@ -78,8 +78,9 @@ Entries are **shared/anonymous** — no per-caregiver attribution.
 A template defines a day's plan (no age association — chosen manually):
 
 - `name`
-- `reference_wake_time` — target morning wake time; used as the day anchor
-  **until the first actual wake-up is logged**
+- `reference_wake_time` — target morning wake time. **Library metadata only** —
+  the live projection anchors on the global `day_start_time` setting (§ Settings),
+  not this field. Kept for authoring/reference.
 - `nap_count`
 - `wake_windows[]` — ordered **relative** awake durations before each sleep
   (`WW1`, `WW2`, …, and the pre-bed window). Each can differ; they typically
@@ -113,7 +114,10 @@ A template defines a day's plan (no age association — chosen manually):
 - `short_nap_threshold` — default **15 min**
 - `short_nap_reduction_percent` — **configurable**; how much to shorten the next
   wake window after a too-short nap
-- Clock format (12/24h) and similar display prefs.
+- `day_start_time` — `'HH:MM'`; when the day begins and the **projection's default
+  anchor** before an actual morning wake is logged (default **07:00**). This is
+  the day anchor, replacing any per-template `reference_wake_time`.
+- Clock format (12/24h, default 24h) and similar display prefs.
 
 ---
 
@@ -122,9 +126,9 @@ A template defines a day's plan (no age association — chosen manually):
 The day is **relative**: a cascade of wake windows measured forward from the
 most recent wake-up.
 
-1. **Anchor.** Before the first actual wake-up, the day is anchored to the
-   template's `reference_wake_time`. Once the real morning wake is logged, the
-   day re-anchors to the **actual** time.
+1. **Anchor.** Before the first actual wake-up, the day is anchored to the global
+   `day_start_time` setting. Once the real morning wake is logged, the day
+   re-anchors to the **actual** time.
 2. **Re-project on every log, anchored to a fixed target bedtime.** After each
    logged event (a wake-up, or a nap's actual end), the app re-projects **all
    remaining sleeps** so they still land on the template's **`target_bedtime`**.
@@ -193,9 +197,7 @@ the projection). All other numeric limits — `daily_total_sleep_target` and
 
 ## 7. Open items to fill in during build
 
-- Optional **example templates** to ship as starting points (user authors their
-  own regardless).
-- Exact **timeline UI** layout for planned-vs-actual.
+- _(none currently open)_
 
 ## 8. Deferred (post-v1)
 

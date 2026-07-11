@@ -2,7 +2,7 @@
 # End-to-end smoke test for the "Right now" home + JSON API.
 #
 # Boots the built adapter-node server in a node:22 container (the host has no
-# Node — see CLAUDE.md) against a THROWAWAY SQLite DB inside the container, drives
+# Node — see AGENTS.md) against a THROWAWAY SQLite DB inside the container, drives
 # the quick-log flows and API with curl, asserts the observable results, then
 # tears everything down. Never touches your real dev DB.
 #

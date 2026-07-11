@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents when working with code in this repository.
 
 ## What this is
 
@@ -59,19 +59,28 @@ runtime stage, so build and runtime must stay on the same Debian base.
   UUIDs** so offline devices and the merge-import never collide; every table
   carries `created_at`/`updated_at` (epoch-ms) used for **last-write-wins** on
   import; sleep times are stored **absolute (epoch-ms) with a per-entry IANA
-  `timezone`** for travel/DST. Reference limits (budgets, cutoffs) are
-  informational only — never enforce them in logic.
+  zone captured at each end** (`timezone` for the start, `end_timezone` for the
+  end) for travel/DST. Reference limits (`daily_total_sleep_target`,
+  `daytime_cap`) are informational only — never enforce them in logic; the
+  `target_bedtime` + per-position `wake_window_*`/`nap_duration_*` bounds **are**
+  enforced by the projection.
 - **Templates: library vs. active slot** (a non-obvious domain rule). The
   `template` table is the user's library. `active_template` is a **single
   persistent row** — a freely-editable _copy_ that drives the daily projection.
   Editing the active slot must **never** mutate a library `template`; saving to
   the library is an explicit, separate action. There is no age-based selection.
-- **Projection engine (core, to be built).** Relative wake windows cascade
-  forward from the last actual wake; every new log re-anchors and re-projects all
-  remaining sleeps to bedtime using the active template's `wake_windows` +
-  `expected_nap_durations`. Short naps (≤ `short_nap_threshold`) shrink the next
-  window by `short_nap_reduction_percent`. Keep this logic pure and unit-tested,
-  separate from routes/DB.
+  The daily anchor is the global `day_start_time` setting (not a per-template
+  field); a template's `reference_wake_time` is library metadata only.
+- **Projection engine (core).** Relative wake windows cascade forward from the
+  last actual wake; every new log re-anchors and re-projects all remaining
+  sleeps. When a template sets `target_bedtime`, the projected tail is
+  **redistributed** to land on that fixed bedtime (wake windows held to their
+  targets first, surplus/deficit absorbed into naps, each clamped to its
+  per-position bound; nap-drop → merge-into-night when infeasible) instead of
+  sliding. Without `target_bedtime` it falls back to the legacy cascade. Short
+  naps (≤ `short_nap_threshold`) shrink the next window by
+  `short_nap_reduction_percent`. The logic is **pure and unit-tested**, separate
+  from routes/DB (`src/lib/projection/`).
 - **PWA/offline.** `static/manifest.webmanifest` + `src/service-worker.ts`
   (app-shell precache). The planned offline write-queue (IndexedDB, replay on
   reconnect) is not built yet.
