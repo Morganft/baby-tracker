@@ -6,7 +6,7 @@
  */
 import { listSleeps, updateSleep, deleteSleep, type SleepDTO } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
-import { parseSleepUpdate, serverTimeZone } from '$lib/server/api/validate';
+import { parseSleepUpdate, resolveDisplayZone } from '$lib/server/api/validate';
 import { resolveLocalDateTime } from '$lib/projection/time';
 import { localDateKey } from '$lib/server/queries/day';
 import { fmtDayHeading } from '$lib/format';
@@ -19,7 +19,7 @@ interface DayGroup {
 	entries: SleepDTO[];
 }
 
-export const load: PageServerLoad = () => {
+export const load: PageServerLoad = ({ cookies }) => {
 	const settings = getSettings();
 	const entries = listSleeps(); // already most-recent-first
 
@@ -27,18 +27,19 @@ export const load: PageServerLoad = () => {
 	const groups: DayGroup[] = [];
 	const byKey = new Map<string, DayGroup>();
 	for (const e of entries) {
-		const key = localDateKey(e.startTime, e.timezone);
+		const key = localDateKey(e.startTime, e.startTimezone);
 		let group = byKey.get(key);
 		if (!group) {
-			group = { key, heading: fmtDayHeading(e.startTime, e.timezone), entries: [] };
+			group = { key, heading: fmtDayHeading(e.startTime, e.startTimezone), entries: [] };
 			byKey.set(key, group);
 			groups.push(group);
 		}
 		group.entries.push(e);
 	}
 
-	// The reference zone; entries whose own zone differs (travel) get a zone label.
-	return { clock24h: settings.clock24h, displayZone: serverTimeZone(), groups };
+	// The display zone; entries whose own start/end zone differs (travel) get a label.
+	const displayZone = resolveDisplayZone(cookies.get('tz'));
+	return { clock24h: settings.clock24h, displayZone, groups };
 };
 
 /** Turn a thrown SvelteKit `error()` from validation into an action `fail`. */
@@ -54,13 +55,18 @@ export const actions: Actions = {
 	edit: async ({ request }) => {
 		const b = await request.formData();
 		const id = s(b.get('id'));
-		const timezone = s(b.get('timezone'));
+		// Each end is resolved in its own captured zone so a cross-zone (travel)
+		// entry round-trips: the start input is typed in the start zone, the end in
+		// the end zone. `endTimezone` falls back to the start zone for same-zone edits.
+		const startTimezone = s(b.get('startTimezone'));
+		const endTimezone = s(b.get('endTimezone')) || startTimezone;
 		const startLocal = s(b.get('startLocal'));
 		const endLocal = s(b.get('endLocal'));
-		if (!id || !timezone || !startLocal) return fail(400, { message: 'Missing required fields' });
+		if (!id || !startTimezone || !startLocal)
+			return fail(400, { message: 'Missing required fields' });
 
-		const startTime = resolveLocalDateTime(startLocal, timezone);
-		const endTime = endLocal ? resolveLocalDateTime(endLocal, timezone) : null;
+		const startTime = resolveLocalDateTime(startLocal, startTimezone);
+		const endTime = endLocal ? resolveLocalDateTime(endLocal, endTimezone) : null;
 		if (endTime != null && endTime < startTime) {
 			return fail(400, { message: 'End time must be after start time' });
 		}
@@ -69,7 +75,9 @@ export const actions: Actions = {
 			const patch = parseSleepUpdate({
 				startTime,
 				endTime,
-				timezone,
+				startTimezone,
+				// Drop the end zone when the sleep is (re)opened to in-progress.
+				endTimezone: endTime == null ? null : endTimezone,
 				type: s(b.get('type')),
 				location: s(b.get('location')) || null,
 				putDown: s(b.get('putDown')) || null,

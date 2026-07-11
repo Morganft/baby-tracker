@@ -12,7 +12,6 @@ export interface SettingsDTO {
 	shortNapThresholdMin: number;
 	shortNapReductionPercent: number;
 	clock24h: boolean;
-	trackTimezone: boolean;
 	dayStartTime: string;
 	createdAt: number;
 	updatedAt: number;
@@ -25,7 +24,6 @@ function toDTO(row: Row): SettingsDTO {
 		shortNapThresholdMin: row.shortNapThresholdMin,
 		shortNapReductionPercent: row.shortNapReductionPercent,
 		clock24h: row.clock24h,
-		trackTimezone: row.trackTimezone,
 		dayStartTime: row.dayStartTime,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime()

@@ -15,7 +15,10 @@ export interface SleepDTO {
 	id: string;
 	startTime: number;
 	endTime: number | null;
-	timezone: string;
+	/** IANA zone the sleep started in. */
+	startTimezone: string;
+	/** IANA zone the sleep ended in; null while in progress (or on legacy rows). */
+	endTimezone: string | null;
 	type: 'nap' | 'night';
 	location: string | null;
 	putDown: string | null;
@@ -33,7 +36,8 @@ function toDTO(row: Row, wakings: number[]): SleepDTO {
 		id: row.id,
 		startTime: row.startTime.getTime(),
 		endTime: row.endTime ? row.endTime.getTime() : null,
-		timezone: row.timezone,
+		startTimezone: row.startTimezone,
+		endTimezone: row.endTimezone ?? null,
 		type: row.type,
 		location: row.location ?? null,
 		putDown: row.putDown ?? null,
@@ -72,6 +76,26 @@ export function listSleeps(): SleepDTO[] {
 	return hydrate(db.select().from(sleepEntry).orderBy(desc(sleepEntry.startTime)).all());
 }
 
+/**
+ * Map of entry id → captured start/end zones. The live views (Home, Timeline)
+ * render "today" in one display zone but use this to label a logged block whose
+ * captured zone differs (travel) — keyed by `ProjectedSleep.entryId`, so the
+ * pure projection engine never has to carry display-zone metadata.
+ */
+export function listEntryZones(): Record<string, { start: string; end: string | null }> {
+	const rows = db
+		.select({
+			id: sleepEntry.id,
+			start: sleepEntry.startTimezone,
+			end: sleepEntry.endTimezone
+		})
+		.from(sleepEntry)
+		.all();
+	const out: Record<string, { start: string; end: string | null }> = {};
+	for (const r of rows) out[r.id] = { start: r.start, end: r.end ?? null };
+	return out;
+}
+
 export function getSleep(id: string): SleepDTO | null {
 	const row = db.select().from(sleepEntry).where(eq(sleepEntry.id, id)).get();
 	return row ? hydrate([row])[0] : null;
@@ -100,7 +124,8 @@ export function createSleep(input: SleepCreate): SleepDTO {
 			...(input.id ? { id: input.id } : {}),
 			startTime: new Date(input.startTime),
 			endTime: input.endTime == null ? null : new Date(input.endTime),
-			timezone: input.timezone,
+			startTimezone: input.startTimezone,
+			endTimezone: input.endTimezone,
 			type: input.type,
 			location: input.location,
 			putDown: input.putDown,
@@ -116,7 +141,8 @@ export function updateSleep(id: string, patch: SleepUpdate): SleepDTO | null {
 	const set: Partial<Row> & { updatedAt: Date } = { updatedAt: new Date() };
 	if ('startTime' in patch) set.startTime = new Date(patch.startTime as number);
 	if ('endTime' in patch) set.endTime = patch.endTime == null ? null : new Date(patch.endTime);
-	if ('timezone' in patch) set.timezone = patch.timezone;
+	if ('startTimezone' in patch) set.startTimezone = patch.startTimezone;
+	if ('endTimezone' in patch) set.endTimezone = patch.endTimezone;
 	if ('type' in patch) set.type = patch.type;
 	if ('location' in patch) set.location = patch.location;
 	if ('putDown' in patch) set.putDown = patch.putDown;

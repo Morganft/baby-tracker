@@ -77,37 +77,71 @@ export function serverTimeZone(): string {
 }
 
 /**
- * The IANA zone to store for a new/edited entry. When per-entry tracking is on
- * (default) and the client sent its own valid zone, that wins — this is how a
- * travelling phone captures where it actually was. Otherwise (tracking off, or a
- * no-JS submit that carried no zone) fall back to the server's reference zone.
+ * The IANA zone to store for a new/edited entry. The client's own valid zone
+ * always wins — this is how a travelling phone captures where it actually was.
+ * Only when the client sent nothing usable (a no-JS submit that carried no zone)
+ * do we fall back to the server's reference zone.
  */
-export function resolveEntryTimezone(clientTz: unknown, trackTimezone: boolean): string {
-	return trackTimezone && isValidTimeZone(clientTz) ? clientTz : serverTimeZone();
+export function resolveEntryTimezone(clientTz: unknown): string {
+	return isValidTimeZone(clientTz) ? clientTz : serverTimeZone();
+}
+
+/**
+ * The display/day zone for today's live views (Home, Timeline). When the phone
+ * has advertised its own valid zone via the `tz` cookie, today's times render —
+ * and the day is grouped — in the phone's zone, so a travel day reads
+ * consistently with the per-entry zones History shows. Before the cookie lands
+ * (first SSR paint, or a no-JS client) we fall back to the server's zone.
+ */
+export function resolveDisplayZone(tzCookie: unknown): string {
+	return isValidTimeZone(tzCookie) ? tzCookie : serverTimeZone();
 }
 
 export interface SleepCreate {
 	id?: string;
 	startTime: number;
 	endTime: number | null;
-	timezone: string;
+	/** IANA zone the sleep started in. */
+	startTimezone: string;
+	/** IANA zone the sleep ended in; null while in progress. */
+	endTimezone: string | null;
 	type: SleepType;
 	location: SleepLocation | null;
 	putDown: PutDown | null;
 	notes: string | null;
 }
 
-/** Validate a new sleep. `startTime`, `type`, and `timezone` are required. */
+/**
+ * The start zone of a sleep body: prefers `startTimezone`, accepts a legacy
+ * `timezone` (older clients / backups), and defaults to the server zone.
+ */
+function startZoneOf(b: Record<string, unknown>): string {
+	if (b.startTimezone !== undefined) return timezone(b.startTimezone, 'startTimezone');
+	if (b.timezone !== undefined) return timezone(b.timezone, 'timezone');
+	return serverTimeZone();
+}
+
+/** Validate a new sleep. `startTime` and `type` are required; zones default sensibly. */
 export function parseSleepCreate(body: unknown): SleepCreate {
 	const b = obj(body);
 	const startTime = epoch(b.startTime, 'startTime');
 	const endTime = b.endTime == null ? null : epoch(b.endTime, 'endTime');
 	if (endTime != null && endTime < startTime) throw error(400, 'endTime must be ≥ startTime');
+	const startTimezone = startZoneOf(b);
+	// A finished sleep carries an end zone (defaulting to the start zone); an
+	// in-progress one has none yet — it's captured when the sleep is stopped.
+	const endTimezone =
+		endTime == null
+			? null
+			: b.endTimezone == null
+				? startTimezone
+				: timezone(b.endTimezone, 'endTimezone');
 	return {
 		id: b.id === undefined ? undefined : str(b.id, 'id'),
 		startTime,
 		endTime,
-		timezone: b.timezone === undefined ? serverTimeZone() : timezone(b.timezone, 'timezone'),
+		startTimezone,
+		endTimezone,
 		type: oneOf(b.type, 'type', SLEEP_TYPES),
 		location: b.location == null ? null : oneOf(b.location, 'location', LOCATIONS),
 		putDown: b.putDown == null ? null : oneOf(b.putDown, 'putDown', PUT_DOWNS),
@@ -118,7 +152,8 @@ export function parseSleepCreate(body: unknown): SleepCreate {
 export interface SleepUpdate {
 	startTime?: number;
 	endTime?: number | null;
-	timezone?: string;
+	startTimezone?: string;
+	endTimezone?: string | null;
 	type?: SleepType;
 	location?: SleepLocation | null;
 	putDown?: PutDown | null;
@@ -131,7 +166,11 @@ export function parseSleepUpdate(body: unknown): SleepUpdate {
 	const out: SleepUpdate = {};
 	if ('startTime' in b) out.startTime = epoch(b.startTime, 'startTime');
 	if ('endTime' in b) out.endTime = b.endTime == null ? null : epoch(b.endTime, 'endTime');
-	if ('timezone' in b) out.timezone = timezone(b.timezone, 'timezone');
+	// Accept `startTimezone` (new) or a legacy `timezone` alias for the start zone.
+	if ('startTimezone' in b) out.startTimezone = timezone(b.startTimezone, 'startTimezone');
+	else if ('timezone' in b) out.startTimezone = timezone(b.timezone, 'timezone');
+	if ('endTimezone' in b)
+		out.endTimezone = b.endTimezone == null ? null : timezone(b.endTimezone, 'endTimezone');
 	if ('type' in b) out.type = oneOf(b.type, 'type', SLEEP_TYPES);
 	if ('location' in b)
 		out.location = b.location == null ? null : oneOf(b.location, 'location', LOCATIONS);
@@ -236,7 +275,6 @@ export interface SettingsUpdate {
 	shortNapThresholdMin?: number;
 	shortNapReductionPercent?: number;
 	clock24h?: boolean;
-	trackTimezone?: boolean;
 	dayStartTime?: string;
 }
 
@@ -257,7 +295,6 @@ export function parseSettingsUpdate(body: unknown): SettingsUpdate {
 		out.shortNapReductionPercent = p;
 	}
 	if ('clock24h' in b) out.clock24h = bool(b.clock24h, 'clock24h');
-	if ('trackTimezone' in b) out.trackTimezone = bool(b.trackTimezone, 'trackTimezone');
 	if ('dayStartTime' in b) {
 		if (typeof b.dayStartTime !== 'string' || !HHMM.test(b.dayStartTime)) {
 			throw error(400, "dayStartTime must be 'HH:MM'");

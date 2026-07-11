@@ -9,10 +9,10 @@
 	const LOCATIONS = ['crib', 'stroller', 'car', 'contact', 'other'];
 	const PUT_DOWNS = ['drowsy', 'already-asleep', 'self-settled'];
 
-	// Zone the user types against: the phone's own when tracking travel, else the
-	// server reference. Prefill and the submitted `timezone` must agree so the epoch
-	// round-trips (SSR uses the server zone; hydration switches to the phone's).
-	const entryZone = $derived(data.trackTimezone ? browserTimeZone() : data.timeZone);
+	// Zone the user types against: the phone's own. Prefill and the submitted
+	// `timezone` must agree so the epoch round-trips (SSR resolves to the server
+	// zone; hydration switches to the phone's, updating both in lockstep).
+	const entryZone = $derived(browserTimeZone());
 	// Prefill the start with "now" in that zone; end left blank (in progress).
 	const startDefault = $derived(toDateTimeInput(data.now, entryZone));
 </script>

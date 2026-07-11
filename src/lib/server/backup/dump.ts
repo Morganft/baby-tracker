@@ -39,7 +39,8 @@ export interface SleepEntryDump {
 	id: string;
 	startTime: number;
 	endTime: number | null;
-	timezone: string;
+	startTimezone: string;
+	endTimezone: string | null;
 	type: (typeof SLEEP_TYPES)[number];
 	location: (typeof LOCATIONS)[number] | null;
 	putDown: (typeof PUT_DOWNS)[number] | null;
@@ -59,7 +60,6 @@ export interface SettingsDump {
 	shortNapThresholdMin: number;
 	shortNapReductionPercent: number;
 	clock24h: boolean;
-	trackTimezone: boolean;
 	dayStartTime: string;
 	createdAt: number;
 	updatedAt: number;
@@ -157,11 +157,14 @@ function parseSleepEntry(v: unknown): SleepEntryDump {
 	const endTime = b.endTime == null ? null : epoch(b.endTime, 'sleepEntry.endTime');
 	if (endTime != null && endTime < startTime)
 		throw error(400, 'sleepEntry.endTime must be ≥ startTime');
+	// `startTimezone` (current) with a legacy `timezone` fallback (older dumps).
+	const startTimezone = str(b.startTimezone ?? b.timezone, 'sleepEntry.startTimezone');
 	return {
 		id: str(b.id, 'sleepEntry.id'),
 		startTime,
 		endTime,
-		timezone: str(b.timezone, 'sleepEntry.timezone'),
+		startTimezone,
+		endTimezone: b.endTimezone == null ? null : str(b.endTimezone, 'sleepEntry.endTimezone'),
 		type: oneOf(b.type, 'sleepEntry.type', SLEEP_TYPES),
 		location: b.location == null ? null : oneOf(b.location, 'sleepEntry.location', LOCATIONS),
 		putDown: b.putDown == null ? null : oneOf(b.putDown, 'sleepEntry.putDown', PUT_DOWNS),
@@ -190,7 +193,7 @@ function parseSettings(v: unknown): SettingsDump {
 			'settings.shortNapReductionPercent'
 		),
 		clock24h: bool(b.clock24h, 'settings.clock24h'),
-		trackTimezone: bool(b.trackTimezone, 'settings.trackTimezone'),
+		// A legacy `trackTimezone` field (removed) is silently ignored if present.
 		dayStartTime: str(b.dayStartTime, 'settings.dayStartTime'),
 		createdAt: epoch(b.createdAt, 'settings.createdAt'),
 		updatedAt: epoch(b.updatedAt, 'settings.updatedAt')

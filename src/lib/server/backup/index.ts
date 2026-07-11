@@ -84,7 +84,8 @@ export function exportData(): BackupDump {
 				id: r.id,
 				startTime: r.startTime.getTime(),
 				endTime: r.endTime ? r.endTime.getTime() : null,
-				timezone: r.timezone,
+				startTimezone: r.startTimezone,
+				endTimezone: r.endTimezone ?? null,
 				type: r.type,
 				location: r.location ?? null,
 				putDown: r.putDown ?? null,
@@ -103,7 +104,6 @@ export function exportData(): BackupDump {
 					shortNapThresholdMin: settingsRow.shortNapThresholdMin,
 					shortNapReductionPercent: settingsRow.shortNapReductionPercent,
 					clock24h: settingsRow.clock24h,
-					trackTimezone: settingsRow.trackTimezone,
 					dayStartTime: settingsRow.dayStartTime,
 					createdAt: settingsRow.createdAt.getTime(),
 					updatedAt: settingsRow.updatedAt.getTime()
@@ -157,7 +157,8 @@ function sleepValues(row: SleepEntryDump) {
 	return {
 		startTime: new Date(row.startTime),
 		endTime: row.endTime == null ? null : new Date(row.endTime),
-		timezone: row.timezone,
+		startTimezone: row.startTimezone,
+		endTimezone: row.endTimezone,
 		type: row.type,
 		location: row.location,
 		putDown: row.putDown,
@@ -286,7 +287,6 @@ export function importData(raw: unknown): ImportResult {
 				shortNapThresholdMin: s.shortNapThresholdMin,
 				shortNapReductionPercent: s.shortNapReductionPercent,
 				clock24h: s.clock24h,
-				trackTimezone: s.trackTimezone,
 				dayStartTime: s.dayStartTime,
 				createdAt: new Date(s.createdAt),
 				updatedAt: new Date(s.updatedAt)

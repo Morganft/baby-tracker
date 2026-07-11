@@ -34,7 +34,8 @@ function fullDump(): BackupDump {
 				id: 's1',
 				startTime: 100,
 				endTime: 200,
-				timezone: 'Europe/Prague',
+				startTimezone: 'Europe/Prague',
+				endTimezone: 'Asia/Dubai',
 				type: 'night',
 				location: 'crib',
 				putDown: 'drowsy',
@@ -49,7 +50,6 @@ function fullDump(): BackupDump {
 			shortNapThresholdMin: 15,
 			shortNapReductionPercent: 30,
 			clock24h: true,
-			trackTimezone: true,
 			dayStartTime: '07:00',
 			createdAt: 1,
 			updatedAt: 2
@@ -77,8 +77,33 @@ describe('parseBackup', () => {
 		expect(parsed.templates[0].id).toBe('t1');
 		expect(parsed.activeTemplate?.sourceTemplateId).toBe('t1');
 		expect(parsed.sleepEntries[0].type).toBe('night');
+		expect(parsed.sleepEntries[0].startTimezone).toBe('Europe/Prague');
+		expect(parsed.sleepEntries[0].endTimezone).toBe('Asia/Dubai');
 		expect(parsed.nightWakings[0].sleepEntryId).toBe('s1');
 		expect(parsed.settings?.clock24h).toBe(true);
+	});
+
+	it('reads a legacy dump (single `timezone`, stray `trackTimezone`)', () => {
+		const d = fullDump();
+		// Simulate a pre-travel-split export.
+		const legacyEntry = {
+			id: 's1',
+			startTime: 100,
+			endTime: 200,
+			timezone: 'Europe/Prague',
+			type: 'night',
+			location: 'crib',
+			putDown: 'drowsy',
+			notes: null,
+			createdAt: 100,
+			updatedAt: 200
+		};
+		d.sleepEntries = [legacyEntry as unknown as (typeof d.sleepEntries)[number]];
+		(d.settings as unknown as { trackTimezone: boolean }).trackTimezone = true;
+		const parsed = parseBackup(d);
+		expect(parsed.sleepEntries[0].startTimezone).toBe('Europe/Prague');
+		expect(parsed.sleepEntries[0].endTimezone).toBeNull();
+		expect(parsed.settings?.dayStartTime).toBe('07:00');
 	});
 
 	it('defaults missing collections to empty / null', () => {

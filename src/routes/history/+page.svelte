@@ -51,6 +51,7 @@
 			<ul class="space-y-2">
 				{#each group.entries as e (e.id)}
 					{@const dur = durationMin(e.startTime, e.endTime)}
+					{@const endTz = e.endTimezone ?? e.startTimezone}
 					<li
 						class="rounded-xl border border-black/10 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.03]"
 					>
@@ -58,15 +59,19 @@
 							<span class="text-lg" aria-hidden="true">{e.type === 'night' ? '🌙' : '☀️'}</span>
 							<div class="min-w-0 flex-1">
 								<p class="text-sm font-medium">
-									{time(e.startTime, e.timezone)}{#if e.endTime != null}–{time(
+									{time(
+										e.startTime,
+										e.startTimezone
+									)}{#if zoneLabel(e.startTime, e.startTimezone)}<span
+											class="ml-1 rounded bg-black/[0.06] px-1 py-0.5 text-[0.65rem] font-medium opacity-70 dark:bg-white/10"
+											>{zoneLabel(e.startTime, e.startTimezone)}</span
+										>{/if}{#if e.endTime != null}<span class="opacity-60">–</span>{time(
 											e.endTime,
-											e.timezone
-										)}{:else}<span class="opacity-60">
-											· in progress</span
-										>{/if}{#if zoneLabel(e.startTime, e.timezone)}<span
-											class="ml-1.5 rounded bg-black/[0.06] px-1 py-0.5 text-[0.65rem] font-medium opacity-70 dark:bg-white/10"
-											>{zoneLabel(e.startTime, e.timezone)}</span
-										>{/if}
+											endTz
+										)}{#if zoneLabel(e.endTime, endTz)}<span
+												class="ml-1 rounded bg-black/[0.06] px-1 py-0.5 text-[0.65rem] font-medium opacity-70 dark:bg-white/10"
+												>{zoneLabel(e.endTime, endTz)}</span
+											>{/if}{:else}<span class="opacity-60"> · in progress</span>{/if}
 								</p>
 								<p class="text-xs opacity-60">
 									{e.type === 'night' ? 'Night' : 'Nap'}
@@ -97,14 +102,15 @@
 										update({ reset: false })}
 							>
 								<input type="hidden" name="id" value={e.id} />
-								<input type="hidden" name="timezone" value={e.timezone} />
+								<input type="hidden" name="startTimezone" value={e.startTimezone} />
+								<input type="hidden" name="endTimezone" value={e.endTimezone ?? e.startTimezone} />
 
 								<label class="block text-xs font-medium opacity-70">
 									Start
 									<input
 										type="datetime-local"
 										name="startLocal"
-										value={toDateTimeInput(e.startTime, e.timezone)}
+										value={toDateTimeInput(e.startTime, e.startTimezone)}
 										required
 										class="mt-1 block w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
 									/>
@@ -115,7 +121,9 @@
 									<input
 										type="datetime-local"
 										name="endLocal"
-										value={e.endTime != null ? toDateTimeInput(e.endTime, e.timezone) : ''}
+										value={e.endTime != null
+											? toDateTimeInput(e.endTime, e.endTimezone ?? e.startTimezone)
+											: ''}
 										class="mt-1 block w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
 									/>
 								</label>

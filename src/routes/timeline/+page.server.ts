@@ -5,20 +5,23 @@
  */
 import { getActiveTemplate } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
+import { listEntryZones } from '$lib/server/queries/sleeps';
 import { buildProjection } from '$lib/server/queries/projection';
-import { serverTimeZone } from '$lib/server/api/validate';
+import { resolveDisplayZone } from '$lib/server/api/validate';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => {
+export const load: PageServerLoad = ({ cookies }) => {
 	const now = Date.now();
-	const timeZone = serverTimeZone();
 	const settings = getSettings();
+	const timeZone = resolveDisplayZone(cookies.get('tz'));
 	const template = getActiveTemplate();
 	return {
 		now,
 		timeZone,
 		clock24h: settings.clock24h,
 		templateName: template.name,
+		// id → captured zones, to flag a logged block whose zone differs from today's.
+		entryZones: listEntryZones(),
 		projection: buildProjection(now, timeZone)
 	};
 };

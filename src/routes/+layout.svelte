@@ -3,8 +3,24 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import { invalidateAll } from '$app/navigation';
+	import { browserTimeZone } from '$lib/format';
 
 	let { children } = $props();
+
+	// Advertise this phone's zone to the server so today's views (Home, Timeline)
+	// render in it, not the server's. Runs once on the client after mount; SSR and
+	// the first hydration share the server-zone `data`, so there's no mismatch —
+	// once the cookie lands (first visit) or changes (travel), re-run the loads.
+	$effect(() => {
+		const tz = browserTimeZone();
+		const current = document.cookie.match(/(?:^|;\s*)tz=([^;]+)/)?.[1];
+		if (current !== tz) {
+			// IANA zone chars are all valid cookie octets, so no encoding needed.
+			document.cookie = `tz=${tz}; path=/; max-age=31536000; samesite=lax`;
+			invalidateAll();
+		}
+	});
 
 	const tabs = [
 		{ href: '/', label: 'Now', icon: '🏠' },

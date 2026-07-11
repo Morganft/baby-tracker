@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { resolveClockTime } from '$lib/projection/time';
-	import { browserTimeZone } from '$lib/format';
+	import { browserTimeZone, fmtTime as fmtTimeIn, fmtZoneAbbrev } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -40,6 +40,21 @@
 				? { id: lastCompleted.entryId, field: 'endTime' as const, current: lastCompleted.end }
 				: null
 	);
+
+	// Zone the "Since" instant was captured in: the active sleep's start (asleep) or
+	// the last wake's end zone (awake). When it differs from today's display zone
+	// (travel), render "Since" in its own zone with a label instead of silently
+	// converting it — matching how History shows off-zone entries.
+	const sinceZone = $derived(
+		asleep && data.activeSleep
+			? data.activeSleep.timezone
+			: lastCompleted?.entryId
+				? (data.entryZones[lastCompleted.entryId]?.end ??
+					data.entryZones[lastCompleted.entryId]?.start ??
+					null)
+				: null
+	);
+	const sinceDiffers = $derived(sinceZone != null && sinceZone !== data.timeZone);
 
 	function fmtTime(epoch: number): string {
 		return new Intl.DateTimeFormat('en-GB', {
@@ -95,7 +110,10 @@
 		</p>
 		<p class="mt-1 text-sm opacity-60">
 			{asleep ? 'Since' : 'Awake since'}
-			{fmtTime(since)}{#if asleep && data.activeSleep}
+			{#if sinceDiffers && sinceZone}{fmtTimeIn(since, sinceZone, data.clock24h)}<span
+					class="ml-1 rounded bg-black/[0.06] px-1 py-0.5 text-[0.65rem] font-medium dark:bg-white/10"
+					>{fmtZoneAbbrev(since, sinceZone)}</span
+				>{:else}{fmtTime(since)}{/if}{#if asleep && data.activeSleep}
 				· {typeLabel(data.activeSleep.type)}{/if}
 		</p>
 

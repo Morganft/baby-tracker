@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { fmtTime, fmtDuration, toTimeInput } from '$lib/format';
+	import { fmtTime, fmtDuration, fmtZoneAbbrev, toTimeInput } from '$lib/format';
 	import type { PageData } from './$types';
+	import type { ProjectedSleep } from '$lib/projection/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -19,6 +20,15 @@
 
 	const tz = $derived(data.timeZone);
 	const time = (e: number) => fmtTime(e, tz, data.clock24h);
+
+	// The timeline axis is one wall-clock (the display zone), so a logged block that
+	// was captured elsewhere (travel) keeps display-zone times but gets a small chip
+	// naming its own zone — the "extra info about original timezone" for a travel day.
+	const zoneChip = (s: ProjectedSleep) => {
+		if (!s.entryId) return '';
+		const z = data.entryZones[s.entryId]?.start;
+		return z && z !== tz ? fmtZoneAbbrev(s.start, z) : '';
+	};
 
 	const sleeps = $derived(data.projection.sleeps);
 
@@ -187,6 +197,9 @@
 						🌙 {typeLabel(s.type, i)}
 						{#if s.status === 'projected'}<span class="font-normal opacity-60">
 								· planned</span
+							>{/if}{#if zoneChip(s)}<span
+								class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
+								>{zoneChip(s)}</span
 							>{/if}
 					</p>
 					<p class="truncate text-xs opacity-70">{time(s.start)}</p>
@@ -202,7 +215,12 @@
 				>
 					<p class="truncate text-sm font-medium">
 						{typeLabel(s.type, i)}
-						{#if s.tooShort}<span class="text-amber-600 dark:text-amber-400"> · short</span>{/if}
+						{#if s.tooShort}<span class="text-amber-600 dark:text-amber-400">
+								· short</span
+							>{/if}{#if zoneChip(s)}<span
+								class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
+								>{zoneChip(s)}</span
+							>{/if}
 					</p>
 					<p class="truncate text-xs opacity-70">
 						{time(s.start)}–{time(end)}

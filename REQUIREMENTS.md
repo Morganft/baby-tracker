@@ -30,19 +30,19 @@ what has actually happened so far.
 
 ## 3. Architecture (decided)
 
-| Concern               | Decision                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------- |
-| **Platform**          | Progressive Web App (PWA) — installable, offline-capable. No app store.                   |
-| **Framework**         | SvelteKit (UI + routing + JSON API in one TypeScript codebase).                           |
-| **Database**          | SQLite via `better-sqlite3`. Single `.db` file = the whole dataset.                       |
-| **Schema/migrations** | Drizzle (type-safe) — or raw SQL given the small schema.                                  |
-| **Packaging**         | One Docker container + one volume (the `.db` file). `docker compose up`.                  |
-| **Sync**              | Server is the single source of truth; phones read/write a small JSON API.                 |
-| **Offline**           | Writes queued locally (IndexedDB) and replayed on reconnect (service worker).             |
-| **IDs**               | Entries use **client-generated UUIDs** so offline devices and merges never collide.       |
-| **Conflicts**         | Last-write-wins per entry.                                                                |
-| **Timestamps**        | Stored **absolute (UTC)** with the **IANA timezone captured per entry** (travel support). |
-| **Access & auth**     | LAN / VPN (e.g. Tailscale) only. Network is the security boundary — no login.             |
+| Concern               | Decision                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Platform**          | Progressive Web App (PWA) — installable, offline-capable. No app store.                                                                                            |
+| **Framework**         | SvelteKit (UI + routing + JSON API in one TypeScript codebase).                                                                                                    |
+| **Database**          | SQLite via `better-sqlite3`. Single `.db` file = the whole dataset.                                                                                                |
+| **Schema/migrations** | Drizzle (type-safe) — or raw SQL given the small schema.                                                                                                           |
+| **Packaging**         | One Docker container + one volume (the `.db` file). `docker compose up`.                                                                                           |
+| **Sync**              | Server is the single source of truth; phones read/write a small JSON API.                                                                                          |
+| **Offline**           | Writes queued locally (IndexedDB) and replayed on reconnect (service worker).                                                                                      |
+| **IDs**               | Entries use **client-generated UUIDs** so offline devices and merges never collide.                                                                                |
+| **Conflicts**         | Last-write-wins per entry.                                                                                                                                         |
+| **Timestamps**        | Stored **absolute (UTC)** with the **IANA timezone captured at each end** of an entry (a sleep can start in one zone and end in another — travel/red-eye support). |
+| **Access & auth**     | LAN / VPN (e.g. Tailscale) only. Network is the security boundary — no login.                                                                                      |
 
 Both caregivers log from their own phones against the same shared data.
 
@@ -60,7 +60,9 @@ Both caregivers log from their own phones against the same shared data.
 - `id` — client-generated UUID
 - `start_time` — absolute (UTC)
 - `end_time` — absolute (UTC), nullable while sleep is in progress
-- `timezone` — IANA tz captured at entry time (for travel)
+- `start_timezone` — IANA tz captured when the sleep started (for travel)
+- `end_timezone` — IANA tz captured when the sleep ended; null while in progress
+  (a sleep can start in one zone and end in another)
 - `type` — `nap` | `night`
 - `location` — `crib` | `stroller` | `car` | `contact` | `other`
 - `put_down` — `drowsy` | `already-asleep` | `self-settled`

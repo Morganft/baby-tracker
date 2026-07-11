@@ -97,19 +97,6 @@
 					class="h-5 w-5 rounded text-indigo-600"
 				/>
 			</label>
-
-			<label class="flex items-center justify-between gap-3">
-				<span>
-					<span class="block text-sm font-medium">Track timezone</span>
-					<span class="block text-xs opacity-60">Capture each entry’s timezone for travel.</span>
-				</span>
-				<input
-					type="checkbox"
-					name="trackTimezone"
-					checked={s.trackTimezone}
-					class="h-5 w-5 rounded text-indigo-600"
-				/>
-			</label>
 		</div>
 
 		<button

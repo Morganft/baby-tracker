@@ -1,6 +1,6 @@
 /**
  * Settings: the single global preferences row (short-nap rule, clock format,
- * timezone tracking). All limits are reference/guidance only.
+ * day start). All limits are reference/guidance only.
  */
 import { getSettings, updateSettings } from '$lib/server/queries/settings';
 import { parseSettingsUpdate } from '$lib/server/api/validate';
@@ -22,8 +22,7 @@ export const actions: Actions = {
 					shortNapReductionPercent: num(b.get('shortNapReductionPercent')),
 					dayStartTime: String(b.get('dayStartTime') ?? ''),
 					// Unchecked checkboxes are absent from the form data.
-					clock24h: b.get('clock24h') === 'on',
-					trackTimezone: b.get('trackTimezone') === 'on'
+					clock24h: b.get('clock24h') === 'on'
 				})
 			);
 		} catch (e) {

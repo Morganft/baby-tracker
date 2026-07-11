@@ -5,17 +5,22 @@
  */
 import { getActiveTemplate } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
-import { getActiveSleep, createSleep, updateSleep } from '$lib/server/queries/sleeps';
+import {
+	getActiveSleep,
+	createSleep,
+	updateSleep,
+	listEntryZones
+} from '$lib/server/queries/sleeps';
 import { buildProjection } from '$lib/server/queries/projection';
-import { serverTimeZone, resolveEntryTimezone } from '$lib/server/api/validate';
+import { resolveDisplayZone, resolveEntryTimezone } from '$lib/server/api/validate';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => {
+export const load: PageServerLoad = ({ cookies }) => {
 	const now = Date.now();
-	const timeZone = serverTimeZone();
-	const template = getActiveTemplate();
 	const settings = getSettings();
+	const timeZone = resolveDisplayZone(cookies.get('tz'));
+	const template = getActiveTemplate();
 	const active = getActiveSleep();
 
 	return {
@@ -24,26 +29,38 @@ export const load: PageServerLoad = () => {
 		clock24h: settings.clock24h,
 		templateName: template.name,
 		asleep: active != null,
-		activeSleep: active ? { id: active.id, start: active.startTime, type: active.type } : null,
+		activeSleep: active
+			? {
+					id: active.id,
+					start: active.startTime,
+					type: active.type,
+					timezone: active.startTimezone
+				}
+			: null,
+		// id → captured zones, so the "Since" line can flag a travel entry logged
+		// in a zone other than the one today renders in.
+		entryZones: listEntryZones(),
 		projection: buildProjection(now, timeZone)
 	};
 };
 
 export const actions: Actions = {
 	/** Quick-log "fell asleep": start the next planned sleep at the current time. */
-	asleep: async ({ request }) => {
+	asleep: async ({ request, cookies }) => {
 		const now = Date.now();
-		const timeZone = serverTimeZone();
 		if (getActiveSleep()) return fail(409, { message: 'Already asleep' });
-		// The instant is absolute (`now`); the stored zone is a display label, so we can
-		// safely take the phone's own zone (sent by the enhanced form) when tracking is on.
+		// Group the day in the phone's zone so a travel day picks the right "next sleep".
+		const timeZone = resolveDisplayZone(cookies.get('tz'));
+		// The instant is absolute (`now`); the stored zone is a display label, so we
+		// take the phone's own zone (sent by the enhanced form) when it's valid.
 		const clientTz = String((await request.formData()).get('timezone') ?? '');
-		const entryTz = resolveEntryTimezone(clientTz, getSettings().trackTimezone);
+		const entryTz = resolveEntryTimezone(clientTz);
 		const type = buildProjection(now, timeZone).nextSleep?.type ?? 'night';
 		createSleep({
 			startTime: now,
 			endTime: null,
-			timezone: entryTz,
+			startTimezone: entryTz,
+			endTimezone: null, // captured when the sleep is stopped (may differ — travel)
 			type,
 			location: null,
 			putDown: null,
@@ -52,11 +69,14 @@ export const actions: Actions = {
 		return { logged: 'asleep' as const };
 	},
 
-	/** Quick-log "woke up": end the in-progress sleep at the current time. */
-	awake: () => {
+	/** Quick-log "woke up": end the in-progress sleep, capturing the wake zone. */
+	awake: async ({ request }) => {
 		const active = getActiveSleep();
 		if (!active) return fail(409, { message: 'Not currently asleep' });
-		updateSleep(active.id, { endTime: Date.now() });
+		// The phone may have crossed a zone since the sleep started; record where it
+		// woke so the end renders in its own zone.
+		const clientTz = String((await request.formData()).get('timezone') ?? '');
+		updateSleep(active.id, { endTime: Date.now(), endTimezone: resolveEntryTimezone(clientTz) });
 		return { logged: 'awake' as const };
 	},
 

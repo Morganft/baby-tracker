@@ -77,8 +77,11 @@ export const activeTemplate = sqliteTable('active_template', {
 });
 
 /**
- * A single sleep. Times are absolute (epoch-ms); `timezone` is the IANA zone
- * captured at entry time so travel/DST render correctly.
+ * A single sleep. Times are absolute (epoch-ms); the IANA zone is captured at
+ * both ends so travel/DST render correctly — a sleep can start in one zone and
+ * end in another (e.g. an overnight flight). The start zone lives in the
+ * original `timezone` column (kept for back-compat with existing rows and
+ * migrations); `endTimezone` is added alongside it.
  */
 export const sleepEntry = sqliteTable('sleep_entry', {
 	id: text('id')
@@ -86,7 +89,12 @@ export const sleepEntry = sqliteTable('sleep_entry', {
 		.$defaultFn(() => crypto.randomUUID()),
 	startTime: integer('start_time', { mode: 'timestamp_ms' }).notNull(),
 	endTime: integer('end_time', { mode: 'timestamp_ms' }), // null while in progress
-	timezone: text('timezone').notNull(), // IANA, e.g. 'Europe/Prague'
+	// IANA zone captured when the sleep started, e.g. 'Europe/Prague'. DB column
+	// stays `timezone` so no rename/backfill is needed for existing rows.
+	startTimezone: text('timezone').notNull(),
+	// IANA zone captured when the sleep ended; null while in progress. Also null on
+	// rows written before this column existed → display falls back to the start zone.
+	endTimezone: text('end_timezone'),
 	type: text('type', { enum: ['nap', 'night'] }).notNull(),
 	location: text('location', {
 		enum: ['crib', 'stroller', 'car', 'contact', 'other']
@@ -113,7 +121,6 @@ export const settings = sqliteTable('settings', {
 	shortNapThresholdMin: integer('short_nap_threshold_min').notNull().default(15),
 	shortNapReductionPercent: integer('short_nap_reduction_percent').notNull().default(30),
 	clock24h: integer('clock_24h', { mode: 'boolean' }).notNull().default(true),
-	trackTimezone: integer('track_timezone', { mode: 'boolean' }).notNull().default(true),
 	// 'HH:MM' local: when the day (and the projection's default anchor) begins,
 	// used before an actual morning wake is logged. See projection query layer.
 	dayStartTime: text('day_start_time').notNull().default('07:00'),

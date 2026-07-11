@@ -5,7 +5,11 @@
  */
 import { createSleep } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
-import { parseSleepCreate, serverTimeZone, resolveEntryTimezone } from '$lib/server/api/validate';
+import {
+	parseSleepCreate,
+	resolveDisplayZone,
+	resolveEntryTimezone
+} from '$lib/server/api/validate';
 import { resolveLocalDateTime } from '$lib/projection/time';
 import { fail, redirect, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -18,13 +22,12 @@ function safeFrom(from: string | null): FromPath {
 	return from === '/timeline' || from === '/history' ? from : '/';
 }
 
-export const load: PageServerLoad = ({ url }) => {
+export const load: PageServerLoad = ({ url, cookies }) => {
 	const settings = getSettings();
 	return {
 		now: Date.now(),
-		timeZone: serverTimeZone(),
+		timeZone: resolveDisplayZone(cookies.get('tz')),
 		clock24h: settings.clock24h,
-		trackTimezone: settings.trackTimezone,
 		from: safeFrom(url.searchParams.get('from'))
 	};
 };
@@ -36,8 +39,9 @@ export const actions: Actions = {
 		const b = await request.formData();
 		const from = safeFrom(s(b.get('from')));
 		// Resolve the typed wall-clock in the same zone we store, so the epoch round-trips.
-		// The enhanced form sends the phone's zone (honoured when tracking is on).
-		const timezone = resolveEntryTimezone(b.get('timezone'), getSettings().trackTimezone);
+		// The enhanced form sends the phone's own zone; both ends share it (a manual add
+		// is typed against one clock — cross-zone edits are done later in History).
+		const timezone = resolveEntryTimezone(b.get('timezone'));
 		const startLocal = s(b.get('startLocal'));
 		const endLocal = s(b.get('endLocal'));
 		if (!startLocal) return fail(400, { message: 'Start time is required' });
@@ -53,7 +57,8 @@ export const actions: Actions = {
 				parseSleepCreate({
 					startTime,
 					endTime,
-					timezone,
+					startTimezone: timezone,
+					endTimezone: endTime == null ? null : timezone,
 					type: s(b.get('type')),
 					location: s(b.get('location')) || null,
 					putDown: s(b.get('putDown')) || null,
