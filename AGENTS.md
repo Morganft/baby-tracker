@@ -10,6 +10,15 @@ engine**: an active schedule template of relative wake windows that re-anchors o
 every logged event to forecast the rest of the day. `REQUIREMENTS.md` is the
 source of truth for scope and behaviour — read it before implementing features.
 
+## Development workflow
+
+The **`delivery-workflow` skill** (`.claude/skills/delivery-workflow/`) is the
+main development workflow for this repo — use it to deliver any task, plan, or
+handover end-to-end. It runs a TDD loop: validate current state → analyse
+requirements and write failing tests → implement to green → validate through the
+Docker gates → review, looping until no critical issues remain. Write tests
+alongside the acceptance criteria, before the implementation.
+
 ## Toolchain: there is no Node on the host — use Docker
 
 The host has **no `node`/`npm`**, only Docker. Every JS command runs inside a
@@ -36,6 +45,14 @@ Examples (`<command>`):
 
 Running the dev server or a booted build from a one-shot container needs a port
 map (`-p 3000:3000`) and, for the dev server, `-- --host 0.0.0.0`.
+
+**Wrap repeated commands in a script.** If you find yourself re-typing the same
+Docker invocation (or any multi-step command) across a task, promote it to a
+`package.json` script or a checked-in helper in `scripts/` instead of pasting it
+again. When you add or change such a script, **update the references that name
+it** — this file's command list above, and the skill docs that cite it
+(`.claude/skills/delivery-workflow/references/gates.md` and `testing.md`) — so
+the docs and the actual commands never drift.
 
 The deploy artifact is the image itself: `docker build -t baby-tracker .` then
 `docker compose up`. `better-sqlite3` is a native module — it is compiled in the
