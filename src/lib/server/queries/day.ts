@@ -42,6 +42,13 @@ export interface DayGrouping {
 	sleeps: LoggedSleep[];
 	/** Actual morning wake = end of the night sleep that started yesterday. */
 	morningWake: number | null;
+	/**
+	 * The entry the "overnight" block represents: the most recent night sleep that
+	 * started yesterday, whether or not it has ended. Lets the timeline edit last
+	 * night's sleep (or an in-progress overnight) instead of logging a duplicate.
+	 * Null when no such entry exists (then the overnight is purely planned).
+	 */
+	overnightEntryId: string | null;
 }
 
 /**
@@ -66,5 +73,15 @@ export function groupDay(entries: DayEntry[], now: number, timeZone: string): Da
 		)
 		.sort((a, b) => b.start - a.start)[0];
 
-	return { sleeps, morningWake: lastNight ? lastNight.end : null };
+	// The overnight block's entry: most recent night started yesterday, end optional
+	// (so an in-progress overnight is editable rather than duplicated).
+	const overnight = entries
+		.filter((e) => e.type === 'night' && localDateKey(e.start, timeZone) === yesterdayKey)
+		.sort((a, b) => b.start - a.start)[0];
+
+	return {
+		sleeps,
+		morningWake: lastNight ? lastNight.end : null,
+		overnightEntryId: overnight ? overnight.id : null
+	};
 }

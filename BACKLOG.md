@@ -4,7 +4,7 @@ Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it 
 
 ## 2026-07-12 — Projection (soft-bedtime follow-ups)
 
-- [projection] With the soft target bedtime, a badly-configured template (or a very late day) lets the projected bedtime float arbitrarily late without ever suggesting the caregiver drop a nap. Consider an opt-in "absurdly-late bedtime" threshold that surfaces a *suggestion* to drop the last nap (caregiver-confirmed, not automatic) — kept out of the engine for now since auto-dropping is what produced the over-long merged pre-bed window we just removed.
+- [projection] With the soft target bedtime, a badly-configured template (or a very late day) lets the projected bedtime float arbitrarily late without ever suggesting the caregiver drop a nap. Consider an opt-in "absurdly-late bedtime" threshold that surfaces a _suggestion_ to drop the last nap (caregiver-confirmed, not automatic) — kept out of the engine for now since auto-dropping is what produced the over-long merged pre-bed window we just removed.
 - [projection] `redistributeTail` is now a thin wrapper around `solveFit` (the drop/merge loop is gone). Could be inlined at its single call site; kept as a named function for the doc comment + `windows` passthrough. Trivial cleanup only.
 
 ## 2026-07-11 — Timezone (open follow-ups)
@@ -62,3 +62,11 @@ Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it 
 - [ux] The home "Adjust time" control can't edit the **morning wake** time. That timestamp is the `end` of yesterday's still-relevant night sleep, which `groupDay` deliberately keeps out of today's `projection.sleeps`, so the home has no entry id to patch. Correct it in the History view.
 - [perf] `+page.server.ts` `load` reads the active template and settings twice (once directly for `templateName`/`clock24h`, once inside `buildProjection`) — two extra idempotent SQLite reads per render. Collapse into one pass if load ever gets hot.
 - [ux] "Fell asleep" always logs `location`/`putDown`/`notes` as null (quick-log by design). The optional-detail capture lives in the entry-edit UI.
+
+## 2026-07-12 — Today-timeline nap popup
+
+- [ux] The timeline nap popup shows the page-level `form.message` error, so a validation failure from one nap can persist as a stale banner when a different nap is next opened (until the next submit). Clear the error on open (needs the error moved into popup-local state, as `form` is a read-only prop).
+- [a11y] The nap popup has no Escape-to-close or focus trap (matches the existing templates editor modal). Extract a shared modal with focus management.
+- [edge] Editing a logged nap on a travel day prefills each end in the entry's own captured zone, so the popup's time can differ from the display-zone label shown on the block (the timeline axis is one zone). The cross-zone "Original / This device" picker only lives in History; add it to the popup if travel-day timeline edits become common.
+- [perf] The timeline `load` now also calls `assembleDay` directly (for `overnightEntryId`) on top of the `assembleDay` inside `buildProjection` — a second full `sleep_entry` scan. Merges with the existing Home/Timeline double-read note; collapse by having `buildProjection` return the grouping if a load gets hot.
+- [ux] When last night's sleep is still in progress (an overnight not yet ended), the overnight block still renders "planned" (dashed) even though tapping it now edits that in-progress entry (rather than logging a duplicate). Correct behaviour, but the dashed styling reads as "no data"; show the in-progress overnight as actual once surfaced.

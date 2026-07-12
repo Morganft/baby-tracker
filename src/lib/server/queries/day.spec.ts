@@ -63,4 +63,21 @@ describe('groupDay', () => {
 		expect(morningWake).toBeNull();
 		expect(sleeps.map((s) => s.id)).toEqual(['B', 'C']);
 	});
+
+	it("exposes last night's entry id as the overnight entry", () => {
+		const { overnightEntryId } = groupDay([lastNight, nap1, tonight], now, 'UTC');
+		expect(overnightEntryId).toBe('A');
+	});
+
+	it('exposes an in-progress overnight entry id though there is no morning wake', () => {
+		const ongoing: DayEntry = { ...lastNight, end: null };
+		const { morningWake, overnightEntryId } = groupDay([ongoing, nap1], now, 'UTC');
+		expect(morningWake).toBeNull();
+		expect(overnightEntryId).toBe('A');
+	});
+
+	it('has no overnight entry on a day with only naps', () => {
+		const { overnightEntryId } = groupDay([nap1, nap2], now, 'UTC');
+		expect(overnightEntryId).toBeNull();
+	});
 });
