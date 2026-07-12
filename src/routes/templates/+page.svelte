@@ -36,7 +36,12 @@
 		method="POST"
 		action="?/editActive"
 		class="space-y-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/[0.06] p-4"
-		use:enhance
+		use:enhance={() =>
+			async ({ update }) =>
+				// Keep the just-saved values in the fields: the default enhance resets the
+				// <form>, which blanks inputs whose value comes from `value={active.x}`
+				// (Svelte sets the DOM value property, not defaultValue).
+				update({ reset: false })}
 	>
 		<h3 class="text-sm font-semibold text-indigo-700 dark:text-indigo-300">Active plan</h3>
 
