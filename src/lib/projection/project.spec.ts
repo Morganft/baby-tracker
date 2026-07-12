@@ -182,7 +182,7 @@ describe('project — awake budget', () => {
 	});
 });
 
-describe('project — fixed-bedtime redistribution', () => {
+describe('project — soft-target-bedtime redistribution', () => {
 	// A template whose windows + expected naps sum to 660m (07:00 → 18:00), with
 	// per-position bounds, so redistribution has room to flex before clamping.
 	const bounded: TemplateConfig = {
@@ -260,7 +260,7 @@ describe('project — fixed-bedtime redistribution', () => {
 		expect(bed.start).toBe(at('18:00'));
 	});
 
-	it('drops a nap (merging it into the night) when the naps cannot fit', () => {
+	it('overruns the target bedtime rather than dropping a nap when the naps cannot fit', () => {
 		const p = project(
 			buildB({
 				morningWake: at('07:00'),
@@ -268,13 +268,23 @@ describe('project — fixed-bedtime redistribution', () => {
 				template: { ...bounded, targetBedtime: '11:30' }
 			})
 		);
-		// Two naps cannot fit before 11:30 at their minima → one is dropped.
-		expect(p.sleeps).toHaveLength(2);
-		expect(p.sleeps[0].type).toBe('nap');
-		expect(p.sleeps[0].start).toBe(at('08:00')); // 07:00 + 60m min window
-		expect(p.sleeps[1].type).toBe('night');
-		expect(p.sleeps[1].start).toBe(at('11:30'));
-		expect(p.sleeps[1].wakeWindowBeforeMin).toBe(180); // merged pre-bed window
+		// Two naps cannot fit before 11:30 even at their minima. Rather than dropping
+		// a nap (which would merge two windows past their max), every window/nap pins
+		// at its minimum and the projected bedtime floats past the target — and every
+		// value stays within its bounds (no 4h merged window).
+		expect(p.sleeps).toHaveLength(3);
+		const [n1, n2, bed] = p.sleeps;
+		expect(n1.type).toBe('nap');
+		expect(n2.type).toBe('nap');
+		expect(bed.type).toBe('night');
+		// All pinned at their minima: windows 60/60/120, naps 30/30.
+		expect(n1.start).toBe(at('08:00')); // 07:00 + 60m min window
+		expect(durMin(n1)).toBe(30); // 08:00 → 08:30
+		expect(n2.wakeWindowBeforeMin).toBe(60);
+		expect(n2.start).toBe(at('09:30')); // 08:30 + 60m
+		expect(durMin(n2)).toBe(30); // 09:30 → 10:00
+		expect(bed.wakeWindowBeforeMin).toBe(120); // pre-bed window at its min, not merged
+		expect(bed.start).toBe(at('12:00')); // 10:00 + 120m, past the 11:30 target
 	});
 
 	it('falls short of an unreachable late bedtime without dropping a nap', () => {

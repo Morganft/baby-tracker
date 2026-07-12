@@ -7,11 +7,12 @@
  *  - **Legacy cascade** (no `targetBedtime`): each projected sleep is
  *    `lastWake + templateWindow`, so the tail of the day slides with a late log.
  *  - **Redistribution** (`targetBedtime` set, bedtime not yet logged): the
- *    remaining projected windows + naps are recomputed to land on a *fixed*
- *    target bedtime, holding total awake time steady — steering each value back
- *    toward its template target, clamped to per-position bounds, flexing naps
- *    before windows, and dropping a nap (merging it into the night) when the
- *    remaining naps can't fit.
+ *    remaining projected windows + naps are recomputed toward a *soft* target
+ *    bedtime, holding total awake time steady — steering each value back toward
+ *    its template target, clamped to per-position bounds, flexing naps before
+ *    windows. The bedtime is a target, not a wall: no nap is ever dropped and no
+ *    value leaves its bounds, so when the sleeps can't compress to reach the
+ *    target they pin at their minima and the projected bedtime floats later.
  *
  * This module has no DB/route imports and is fully deterministic so it can be
  * unit-tested in isolation.
@@ -72,14 +73,17 @@ function distribute(
 
 /**
  * Fit `windows` + `naps` into `available` minutes, holding each toward its
- * target. Naps flex first (wake-window priority), then windows. `dropNeeded` is
- * true when even at every minimum the sleeps overrun `available`.
+ * target. Naps flex first (wake-window priority), then windows. Every returned
+ * value stays within its `[min, max]` bound; when the sleeps can't compress to
+ * fit `available` even at their minima, they pin at those minima and the cascade
+ * lands the projected bedtime later than the (soft) target — see
+ * `redistributeTail`.
  */
 function solveFit(
 	windows: Slot[],
 	naps: Slot[],
 	available: number
-): { windowValues: number[]; napValues: number[]; dropNeeded: boolean } {
+): { windowValues: number[]; napValues: number[] } {
 	const wStart = windows.map((w) => clamp(w.target, w.min, w.max));
 	const nStart = naps.map((n) => clamp(n.target, n.min, n.max));
 	const delta = available - (wStart.reduce((a, b) => a + b, 0) + nStart.reduce((a, b) => a + b, 0));
@@ -96,40 +100,25 @@ function solveFit(
 		windows.map((w) => w.max),
 		napRes.leftover
 	);
-	return {
-		windowValues: winRes.values,
-		napValues: napRes.values,
-		dropNeeded: winRes.leftover < -1e-6
-	};
+	return { windowValues: winRes.values, napValues: napRes.values };
 }
 
 /**
  * Redistribute the projected tail (windows m..napCount + naps m..napCount-1)
- * across the interval from `lastWake` to `targetBedtime`, dropping (merging into
- * the night) the last nap whenever the remaining naps can't fit at their minima.
+ * across the interval from `lastWake` to the **soft** `targetBedtime`. The
+ * bedtime is a target, not a hard wall: every window and nap is held within its
+ * `[min, max]` bound, so when the remaining sleeps can't compress to reach the
+ * target they pin at their minima and the projected bedtime simply floats later.
+ * No nap is dropped — keeping the day's nap count intact and every value in
+ * bounds (no over-long merged pre-bed window).
  */
 function redistributeTail(
 	windows: Slot[],
 	naps: Slot[],
 	available: number
 ): { windowValues: number[]; napValues: number[]; windows: Slot[] } {
-	let W = windows;
-	let N = naps;
-	// Each drop removes the last nap and merges its two flanking windows (the
-	// baby stays awake across the gap), so the loop strictly shrinks and ends.
-	for (;;) {
-		const solved = solveFit(W, N, available);
-		if (!solved.dropNeeded || N.length === 0) {
-			return { windowValues: solved.windowValues, napValues: solved.napValues, windows: W };
-		}
-		const a = W[W.length - 2];
-		const b = W[W.length - 1];
-		W = [
-			...W.slice(0, W.length - 2),
-			{ target: a.target + b.target, min: a.min + b.min, max: a.max + b.max, reduced: a.reduced }
-		];
-		N = N.slice(0, N.length - 1);
-	}
+	const solved = solveFit(windows, naps, available);
+	return { windowValues: solved.windowValues, napValues: solved.napValues, windows };
 }
 
 export function project(input: ProjectionInput): Projection {

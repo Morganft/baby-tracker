@@ -92,8 +92,11 @@ A template defines a day's plan (no age association — chosen manually):
   haven't happened yet
 - `nap_duration_min[]`, `nap_duration_max[]` — per-position bounds for each nap
   (same length as `expected_nap_durations`). **Enforced** during redistribution.
-- `target_bedtime` — the wall-clock bedtime the day is anchored back to;
-  **enforced** as the fixed end of the redistributed cascade (§5)
+- `target_bedtime` — the wall-clock bedtime the day is steered back toward; a
+  **soft** anchor for the redistributed cascade (§5). Redistribution aims for it
+  but never violates a wake-window/nap bound to hit it: when the remaining sleeps
+  can't fit within bounds, bedtime floats past the target rather than a nap being
+  dropped.
 - `daily_total_sleep_target`, `daytime_cap` — **reference only**
 
 #### Library + active slot
@@ -129,40 +132,49 @@ most recent wake-up.
 1. **Anchor.** Before the first actual wake-up, the day is anchored to the global
    `day_start_time` setting. Once the real morning wake is logged, the day
    re-anchors to the **actual** time.
-2. **Re-project on every log, anchored to a fixed target bedtime.** After each
+2. **Re-project on every log, steering toward a soft target bedtime.** After each
    logged event (a wake-up, or a nap's actual end), the app re-projects **all
-   remaining sleeps** so they still land on the template's **`target_bedtime`**.
+   remaining sleeps** so they steer toward the template's **`target_bedtime`**.
    Rather than sliding every remaining sleep by a fixed delta (which would let
    total awake time drift), it **redistributes** the interval from the last
    actual wake to `target_bedtime` across the remaining wake windows and naps,
-   steering each back toward its template value. `target_bedtime` does **not**
-   move; it is the fixed end of the cascade.
+   steering each back toward its template value. `target_bedtime` is a **soft**
+   target, not a fixed wall (see §5.4).
 3. **Redistribution is bounded and prioritised.** Each recalculated value is
    clamped to its per-position bound (`wake_window_min/max`,
    `nap_duration_min/max`). **Wake windows take priority over naps:** hold windows
    at their targets as far as their bounds allow and absorb surplus/deficit into
    **nap durations** first; flex windows only once naps are pinned at a bound.
-4. **Nap-drop fallback.** If the remaining naps cannot fit within their bounds
-   before `target_bedtime`, **drop a nap** and **merge it into the night sleep**
-   (that unit's bedtime moves earlier). Cascade the drop if still infeasible.
+4. **Bounds win over the target; bedtime floats.** Bounds are never violated to
+   hit `target_bedtime`. When the remaining sleeps can't compress within their
+   bounds to reach the target, they pin at their minima and the projected bedtime
+   **floats later** than the target — no nap is dropped and no over-long merged
+   pre-bed window is produced. (Symmetrically, when they can't expand to fill the
+   interval even at their maxima, bedtime lands earlier than the target.) The
+   day's nap count stays intact; dropping a nap is a caregiver decision, not the
+   engine's.
 5. **Next sleep suggestion** = last wake + current (redistributed) wake window.
 6. **Short-nap rule.** If a nap's duration ≤ `short_nap_threshold` (15 min), the
    **next** wake window is reduced by `short_nap_reduction_percent` (configurable).
    The caregiver can also **manually override** any projected window's length
    (override applies to the current day). Overrides and the short-nap reduction
    feed into the redistribution above, still clamped to bounds.
-7. **Enforced vs. display-only budgets.** `target_bedtime` and the per-position
-   `wake_window_*` / `nap_duration_*` bounds are **enforced** — they shape the
-   projection (§5.2–5.4). `daily_total_sleep_target` and `daytime_cap` remain
-   **display-only** reference: shown as used-vs-target, never altering projection.
+7. **Enforced vs. display-only budgets.** The per-position `wake_window_*` /
+   `nap_duration_*` bounds are **enforced** — projected values never leave them
+   (§5.3). `target_bedtime` is an enforced _input_ to the redistribution but a
+   **soft** target the projection may float past (§5.4). `daily_total_sleep_target`
+   and `daytime_cap` remain **display-only** reference: shown as used-vs-target,
+   never altering projection.
 8. **Template selection.** The active-slot template is chosen manually from the
    library and persists across days. No age-based selection or switching.
 9. **Day/night grouping.** A night sleep and any wakings after midnight belong to
    **the day the night sleep started** (a night stays one unit).
 
-The **`target_bedtime` and per-position min/max bounds are enforced** (they drive
-the projection). All other numeric limits — `daily_total_sleep_target` and
-`daytime_cap` — remain **reference/guidance only**, never blocking.
+The **per-position min/max bounds are enforced** (projected values never leave
+them), and **`target_bedtime` drives the projection as a soft target** (steered
+toward, but floated past rather than breaking a bound). All other numeric limits —
+`daily_total_sleep_target` and `daytime_cap` — remain **reference/guidance only**,
+never blocking.
 
 ---
 

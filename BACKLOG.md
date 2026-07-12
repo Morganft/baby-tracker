@@ -2,6 +2,11 @@
 
 Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it can wait>`.
 
+## 2026-07-12 — Projection (soft-bedtime follow-ups)
+
+- [projection] With the soft target bedtime, a badly-configured template (or a very late day) lets the projected bedtime float arbitrarily late without ever suggesting the caregiver drop a nap. Consider an opt-in "absurdly-late bedtime" threshold that surfaces a *suggestion* to drop the last nap (caregiver-confirmed, not automatic) — kept out of the engine for now since auto-dropping is what produced the over-long merged pre-bed window we just removed.
+- [projection] `redistributeTail` is now a thin wrapper around `solveFit` (the drop/merge loop is gone). Could be inlined at its single call site; kept as a named function for the doc comment + `windows` passthrough. Trivial cleanup only.
+
 ## 2026-07-11 — Timezone (open follow-ups)
 
 - [perf] `listEntryZones()` full-scans `sleep_entry` on every Home/Timeline load (on top of `assembleDay`'s scan). Fine at personal scale; add a today-range filter if a load gets hot.
