@@ -32,6 +32,11 @@
 
 	const sleeps = $derived(data.projection.sleeps);
 
+	// The anchor is an actual logged morning wake only once one exists; before the
+	// first log it's the template's reference time, so the overnight block above it
+	// is a projection, not a recorded sleep.
+	const anchorIsActual = $derived(data.projection.anchorIsActual);
+
 	// Wake-window segments: the awake gap leading into each sleep, rendered as a
 	// block spanning cursor→sleep-start with its duration (actual for logged
 	// sleeps, template/redistributed otherwise). `planned` = leads into a
@@ -150,13 +155,21 @@
 		{/each}
 
 		<!-- Overnight sleep: the tail of last night's sleep the day woke from,
-		     rendered into the top pad, ending at the anchor (morning wake). -->
+		     rendered into the top pad, ending at the anchor (morning wake). Actual
+		     once a morning wake is logged; planned (dashed) before the first log,
+		     when the wake time is only the template's reference. -->
 		<div
-			class="absolute right-0 left-14 flex flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/25 px-3 pb-1.5"
+			class="absolute right-0 left-14 flex flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 px-3 pb-1.5 {anchorIsActual
+				? 'border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/25'
+				: 'border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-400/[0.02] to-indigo-400/[0.08]'}"
 			style="top: {overnight.top}px; height: {overnight.height}px"
 		>
-			<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">🌙 Overnight</p>
-			<p class="truncate text-xs opacity-70">woke {time(overnight.wake)}</p>
+			<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+				🌙 Overnight{#if !anchorIsActual}<span class="font-normal opacity-60"> · planned</span>{/if}
+			</p>
+			<p class="truncate text-xs opacity-70">
+				{#if anchorIsActual}woke {time(overnight.wake)}{:else}waking ~{time(overnight.wake)}{/if}
+			</p>
 		</div>
 
 		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start -->
