@@ -14,13 +14,16 @@ import {
 	deleteTemplate,
 	type ActiveTemplateDTO
 } from '$lib/server/queries/templates';
+import { getSettings } from '$lib/server/queries/settings';
 import { parseTemplate, type TemplateInput } from '$lib/server/api/validate';
 import { fail, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => ({
 	active: getActiveTemplate(),
-	library: listTemplates()
+	library: listTemplates(),
+	// Reference-preview honours the 12/24h display preference like the other views.
+	clock24h: getSettings().clock24h
 });
 
 const s = (v: FormDataEntryValue | null) => (typeof v === 'string' ? v : '');
