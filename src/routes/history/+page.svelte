@@ -1,8 +1,16 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { fmtTime, fmtDuration, fmtZoneAbbrev, toDateTimeInput } from '$lib/format';
+	import {
+		browserTimeZone,
+		fmtTime,
+		fmtDuration,
+		fmtZoneAbbrev,
+		toDateTimeInput
+	} from '$lib/format';
+	import { resolveLocalDateTime } from '$lib/projection/time';
 	import type { PageData, ActionData } from './$types';
+	import type { SleepDTO } from '$lib/server/queries/sleeps';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -19,9 +27,67 @@
 	const LOCATIONS = ['crib', 'stroller', 'car', 'contact', 'other'];
 	const PUT_DOWNS = ['drowsy', 'already-asleep', 'self-settled'];
 
+	// This device's live zone. Under SSR this resolves to the server zone, but no
+	// edit form is open then; by the time a form opens (a client click) it is the
+	// real browser zone.
+	const deviceZone = $derived(browserTimeZone());
+
+	type ZoneMode = 'original' | 'device';
+
 	// Which entry's edit form is open (only one at a time keeps the page calm).
 	let editing = $state<string | null>(null);
-	const toggle = (id: string) => (editing = editing === id ? null : id);
+	// The open form's editable state. Each end interprets its typed time in its own
+	// zone ('original' = the end's captured zone, 'device' = this phone's zone), so
+	// a cross-zone travel entry can have just one end re-entered in the current zone
+	// without recalculating the other. The datetime-local values are bound, so a
+	// zone switch rewrites that field to the same instant re-expressed in the new zone.
+	let startMode = $state<ZoneMode>('original');
+	let endMode = $state<ZoneMode>('original');
+	let startVal = $state('');
+	let endVal = $state('');
+
+	/** The start/end zone the open form currently interprets its inputs in. */
+	function startZoneFor(e: SleepDTO): string {
+		return startMode === 'device' ? deviceZone : e.startTimezone;
+	}
+	function endZoneFor(e: SleepDTO): string {
+		return endMode === 'device' ? deviceZone : (e.endTimezone ?? e.startTimezone);
+	}
+	/** True when an end was captured somewhere other than the phone's zone (so it
+	 *  has an "Original" and a "This device" zone that actually differ). */
+	function startIsTravel(e: SleepDTO): boolean {
+		return e.startTimezone !== deviceZone;
+	}
+	function endIsTravel(e: SleepDTO): boolean {
+		return e.endTime != null && (e.endTimezone ?? e.startTimezone) !== deviceZone;
+	}
+
+	function toggle(e: SleepDTO) {
+		if (editing === e.id) {
+			editing = null;
+			return;
+		}
+		editing = e.id;
+		startMode = 'original';
+		endMode = 'original';
+		startVal = toDateTimeInput(e.startTime, e.startTimezone);
+		endVal = e.endTime != null ? toDateTimeInput(e.endTime, e.endTimezone ?? e.startTimezone) : '';
+	}
+
+	/** Switch the start field's interpretation zone, re-expressing its typed instant. */
+	function setStartMode(e: SleepDTO, next: ZoneMode) {
+		if (next === startMode) return;
+		const prev = startZoneFor(e);
+		startMode = next;
+		if (startVal) startVal = toDateTimeInput(resolveLocalDateTime(startVal, prev), startZoneFor(e));
+	}
+	/** Switch the end field's interpretation zone, re-expressing its typed instant. */
+	function setEndMode(e: SleepDTO, next: ZoneMode) {
+		if (next === endMode) return;
+		const prev = endZoneFor(e);
+		endMode = next;
+		if (endVal) endVal = toDateTimeInput(resolveLocalDateTime(endVal, prev), endZoneFor(e));
+	}
 </script>
 
 <section class="space-y-5">
@@ -44,6 +110,41 @@
 	{#if data.groups.length === 0}
 		<p class="py-8 text-center text-sm opacity-50">No sleeps logged yet.</p>
 	{/if}
+
+	{#snippet zonePicker(
+		label: string,
+		mode: ZoneMode,
+		origAbbrev: string,
+		deviceAbbrev: string,
+		pick: (m: ZoneMode) => void
+	)}
+		<div class="text-xs">
+			<span class="mb-1 block opacity-60">Enter {label.toLowerCase()} in</span>
+			<div class="inline-flex rounded-lg border border-black/15 p-0.5 dark:border-white/20">
+				<button
+					type="button"
+					onclick={() => pick('original')}
+					class="rounded-md px-2 py-1 font-medium {mode === 'original'
+						? 'bg-indigo-600 text-white'
+						: 'opacity-70'}"
+				>
+					Original · {origAbbrev}
+				</button>
+				<button
+					type="button"
+					onclick={() => pick('device')}
+					class="rounded-md px-2 py-1 font-medium {mode === 'device'
+						? 'bg-indigo-600 text-white'
+						: 'opacity-70'}"
+				>
+					This device · {deviceAbbrev}
+				</button>
+			</div>
+			<p class="mt-1 opacity-50">
+				Same moment either way — “This device” re-labels this end to your current zone.
+			</p>
+		</div>
+	{/snippet}
 
 	{#each data.groups as group (group.key)}
 		<div class="space-y-2">
@@ -85,7 +186,7 @@
 							</div>
 							<button
 								type="button"
-								onclick={() => toggle(e.id)}
+								onclick={() => toggle(e)}
 								class="rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:text-indigo-400"
 							>
 								{editing === e.id ? 'Close' : 'Edit'}
@@ -102,31 +203,47 @@
 										update({ reset: false })}
 							>
 								<input type="hidden" name="id" value={e.id} />
-								<input type="hidden" name="startTimezone" value={e.startTimezone} />
-								<input type="hidden" name="endTimezone" value={e.endTimezone ?? e.startTimezone} />
+								<input type="hidden" name="startTimezone" value={startZoneFor(e)} />
+								<input type="hidden" name="endTimezone" value={endZoneFor(e)} />
 
 								<label class="block text-xs font-medium opacity-70">
 									Start
 									<input
 										type="datetime-local"
 										name="startLocal"
-										value={toDateTimeInput(e.startTime, e.startTimezone)}
+										bind:value={startVal}
 										required
 										class="mt-1 block w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
 									/>
 								</label>
+								{#if startIsTravel(e)}
+									{@render zonePicker(
+										'Start',
+										startMode,
+										fmtZoneAbbrev(e.startTime, e.startTimezone),
+										fmtZoneAbbrev(e.startTime, deviceZone),
+										(m) => setStartMode(e, m)
+									)}
+								{/if}
 
 								<label class="block text-xs font-medium opacity-70">
 									End <span class="opacity-50">(blank = in progress)</span>
 									<input
 										type="datetime-local"
 										name="endLocal"
-										value={e.endTime != null
-											? toDateTimeInput(e.endTime, e.endTimezone ?? e.startTimezone)
-											: ''}
+										bind:value={endVal}
 										class="mt-1 block w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
 									/>
 								</label>
+								{#if endIsTravel(e)}
+									{@render zonePicker(
+										'End',
+										endMode,
+										fmtZoneAbbrev(e.endTime!, e.endTimezone ?? e.startTimezone),
+										fmtZoneAbbrev(e.endTime!, deviceZone),
+										(m) => setEndMode(e, m)
+									)}
+								{/if}
 
 								<div class="grid grid-cols-2 gap-3">
 									<label class="block text-xs font-medium opacity-70">
