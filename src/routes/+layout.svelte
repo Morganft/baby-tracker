@@ -33,19 +33,15 @@
 	// Exact match for the home tab; prefix match for the section tabs.
 	const isActive = (href: string) =>
 		href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
-
-	// The Plan page is a two-column editor that needs room to breathe on desktop; the
-	// rest of the app stays phone-width. Only the max-width lifts on large screens —
-	// mobile is unchanged.
-	const wide = $derived(page.url.pathname.startsWith('/templates'));
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
+<!-- Phone-first, capped at max-w-md; every page lifts to a wider cap on large
+     screens so desktop uses the available width instead of a narrow center column.
+     The bottom tab bar stays phone-width (max-w-md) regardless. -->
 <div
-	class="mx-auto flex min-h-dvh flex-col px-4 pt-[env(safe-area-inset-top)] pb-[calc(env(safe-area-inset-bottom)+4.5rem)] {wide
-		? 'max-w-md lg:max-w-5xl'
-		: 'max-w-md'}"
+	class="mx-auto flex min-h-dvh max-w-md flex-col px-4 pt-[env(safe-area-inset-top)] pb-[calc(env(safe-area-inset-bottom)+4.5rem)] lg:max-w-5xl"
 >
 	<header class="flex items-center gap-2 py-4">
 		<img src="/icon.svg" alt="" class="h-8 w-8 rounded-lg" />
