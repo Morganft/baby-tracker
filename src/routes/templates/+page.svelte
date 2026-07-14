@@ -221,30 +221,37 @@
 		f.referenceWakeTime = `${hh}:${mm}`;
 	}
 
-	// --- Resize a nap by dragging its lower grip. The duration changes and the
-	// *following* window absorbs it, so bedtime and every later sleep stay put — only
-	// one wake window moves. Snap to 5 min; clamp so neither value goes negative. ---
-	let resizing = $state<number | null>(null);
+	// --- Resize a nap by dragging a grip on either edge. The duration changes and a
+	// single neighbouring window absorbs it, so bedtime and every other sleep stay put.
+	// The bottom grip grows the nap downward (the *following* window shrinks); the top
+	// grip grows it upward (the *preceding* window shrinks — the nap starts earlier).
+	// Snap to 5 min; clamp so neither the duration nor the borrowed-from window goes
+	// negative. ---
+	let resizing = $state<{ idx: number; edge: 'top' | 'bottom' } | null>(null);
 	let rzStartY = 0;
 	let rzDur = 0;
-	let rzNextWin = 0;
-	function beginResize(e: PointerEvent, napIdx: number) {
+	let rzWin = 0; // the window that absorbs the change (following or preceding)
+	function beginResize(e: PointerEvent, napIdx: number, edge: 'top' | 'bottom') {
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		resizing = napIdx;
+		resizing = { idx: napIdx, edge };
 		rzStartY = e.clientY;
 		rzDur = napAt(napIdx);
-		rzNextWin = winAt(napIdx + 1);
+		rzWin = winAt(edge === 'bottom' ? napIdx + 1 : napIdx);
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		e.preventDefault();
 	}
 	function moveResize(e: PointerEvent) {
-		if (resizing === null) return;
-		let d = Math.round((e.clientY - rzStartY) / PX_PER_MIN / SNAP_MIN) * SNAP_MIN;
-		d = Math.min(rzNextWin, Math.max(-rzDur, d)); // keep duration and next window ≥ 0
-		setNapAndWindow(resizing, rzDur + d, resizing + 1, rzNextWin - d);
+		if (!resizing) return;
+		const raw = Math.round((e.clientY - rzStartY) / PX_PER_MIN / SNAP_MIN) * SNAP_MIN;
+		// Dragging the bottom grip down (raw > 0) or the top grip up (raw < 0) both grow
+		// the nap; the absorbing window shrinks by the same amount.
+		const delta = resizing.edge === 'bottom' ? raw : -raw;
+		const d = Math.min(rzWin, Math.max(-rzDur, delta)); // keep duration and window ≥ 0
+		const winIdx = resizing.edge === 'bottom' ? resizing.idx + 1 : resizing.idx;
+		setNapAndWindow(resizing.idx, rzDur + d, winIdx, rzWin - d);
 	}
 	function endResize(e: PointerEvent) {
-		if (resizing === null) return;
+		if (!resizing) return;
 		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
 		resizing = null;
 	}
@@ -534,19 +541,37 @@
 								</p>
 							</button>
 							{#if isNap}
-								<!-- Resize grip → change this nap's duration; the next window absorbs it -->
+								<!-- Top grip → grow this nap upward; the preceding window absorbs it -->
+								<button
+									type="button"
+									tabindex="-1"
+									aria-label="Resize nap {b.idx + 1} start"
+									onpointerdown={(e) => beginResize(e, b.idx, 'top')}
+									onpointermove={moveResize}
+									onpointerup={endResize}
+									class="absolute right-0 left-14 z-20 flex touch-none cursor-ns-resize items-center justify-center"
+									style="top: {y(b.startMin) - 7}px; height: 14px"
+								>
+									<span
+										class="h-1 w-8 rounded-full {resizing?.idx === b.idx && resizing.edge === 'top'
+											? 'bg-indigo-500'
+											: 'bg-black/25 dark:bg-white/30'}"
+									></span>
+								</button>
+								<!-- Bottom grip → change this nap's duration; the next window absorbs it -->
 								<button
 									type="button"
 									tabindex="-1"
 									aria-label="Resize nap {b.idx + 1} duration"
-									onpointerdown={(e) => beginResize(e, b.idx)}
+									onpointerdown={(e) => beginResize(e, b.idx, 'bottom')}
 									onpointermove={moveResize}
 									onpointerup={endResize}
 									class="absolute right-0 left-14 z-20 flex touch-none cursor-ns-resize items-center justify-center"
 									style="top: {y(b.endMin) - 7}px; height: 14px"
 								>
 									<span
-										class="h-1 w-8 rounded-full {resizing === b.idx
+										class="h-1 w-8 rounded-full {resizing?.idx === b.idx &&
+										resizing.edge === 'bottom'
 											? 'bg-indigo-500'
 											: 'bg-black/25 dark:bg-white/30'}"
 									></span>
