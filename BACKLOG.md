@@ -70,3 +70,9 @@ Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it 
 - [edge] Editing a logged nap on a travel day prefills each end in the entry's own captured zone, so the popup's time can differ from the display-zone label shown on the block (the timeline axis is one zone). The cross-zone "Original / This device" picker only lives in History; add it to the popup if travel-day timeline edits become common.
 - [perf] The timeline `load` now also calls `assembleDay` directly (for `overnightEntryId`) on top of the `assembleDay` inside `buildProjection` — a second full `sleep_entry` scan. Merges with the existing Home/Timeline double-read note; collapse by having `buildProjection` return the grouping if a load gets hot.
 - [ux] When last night's sleep is still in progress (an overnight not yet ended), the overnight block still renders "planned" (dashed) even though tapping it now edits that in-progress entry (rather than logging a duplicate). Correct behaviour, but the dashed styling reads as "no data"; show the in-progress overnight as actual once surfaced.
+
+## 2026-07-14 — Plan-page undo/redo
+
+- [ux] Undo history covers only the timeline-driven fields (wake, windows, nap durations, target bedtime). The Advanced-drawer fields (plan name, redistribution bounds, reference budget) are not in the history — they keep native per-field text undo. Fold them in if drawer edits ever need reverting too.
+- [ux] For up to ~500ms after a fresh edit (before the debounced commit clears the redo stack), the Redo button can appear enabled even though redoing is a no-op. Cosmetic; eager-clear the redo stack on the first tracked change if it looks off.
+- [cleanup] `commitTimer`/`saveTimer` are not cleared on component destroy (matches the pre-existing `saveTimer` pattern). Harmless because the submit reads live values, but a shared onDestroy cleanup would be tidier.

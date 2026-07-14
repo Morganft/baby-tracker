@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { initHistory, commit, undo, redo, type History } from '$lib/timeline/history';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -22,16 +24,80 @@
 		expectedNapDurations: data.active.expectedNapDurations.join(', '),
 		targetBedtime: data.active.targetBedtime ?? ''
 	});
+	// --- Undo / redo. A snapshot of exactly the timeline-driven fields in `f`;
+	// the reversible unit for a drag, resize, tap-edit, or add/remove-nap. ---
+	type Snap = {
+		referenceWakeTime: string;
+		napCount: number;
+		wakeWindows: string;
+		expectedNapDurations: string;
+		targetBedtime: string;
+	};
+	const snapshot = (): Snap => ({
+		referenceWakeTime: f.referenceWakeTime,
+		napCount: f.napCount,
+		wakeWindows: f.wakeWindows,
+		expectedNapDurations: f.expectedNapDurations,
+		targetBedtime: f.targetBedtime
+	});
+	function applySnap(s: Snap) {
+		f.referenceWakeTime = s.referenceWakeTime;
+		f.napCount = s.napCount;
+		f.wakeWindows = s.wakeWindows;
+		f.expectedNapDurations = s.expectedNapDurations;
+		f.targetBedtime = s.targetBedtime;
+	}
+	const snapEqual = (a: Snap, b: Snap) =>
+		a.referenceWakeTime === b.referenceWakeTime &&
+		a.napCount === b.napCount &&
+		a.wakeWindows === b.wakeWindows &&
+		a.expectedNapDurations === b.expectedNapDurations &&
+		a.targetBedtime === b.targetBedtime;
+
+	let hist = $state<History<Snap>>(initHistory(snapshot()));
+	const canUndo = $derived(hist.past.length > 0);
+	const canRedo = $derived(hist.future.length > 0);
+
+	// A burst of edits (a drag fires many mutations) is folded into a single undo
+	// step: we commit the settled value on a debounce rather than per mutation.
+	let commitTimer: ReturnType<typeof setTimeout> | undefined;
+	function scheduleCommit() {
+		clearTimeout(commitTimer);
+		commitTimer = setTimeout(() => (hist = commit(hist, snapshot(), snapEqual)), 500);
+	}
+	function doUndo() {
+		clearTimeout(commitTimer);
+		const step = undo(hist, snapshot(), snapEqual);
+		if (!step) return;
+		hist = step.history;
+		applySnap(step.value); // re-arms the save effect, so the undo persists
+	}
+	function doRedo() {
+		clearTimeout(commitTimer);
+		const step = redo(hist, snapshot(), snapEqual);
+		if (!step) return;
+		hist = step.history;
+		applySnap(step.value);
+	}
+
 	// svelte-ignore state_referenced_locally
 	let seededFrom = data.active;
 	$effect(() => {
 		if (active === seededFrom) return;
 		seededFrom = active;
-		f.referenceWakeTime = active.referenceWakeTime;
-		f.napCount = active.napCount;
-		f.wakeWindows = active.wakeWindows.join(', ');
-		f.expectedNapDurations = active.expectedNapDurations.join(', ');
-		f.targetBedtime = active.targetBedtime ?? '';
+		const next: Snap = {
+			referenceWakeTime: active.referenceWakeTime,
+			napCount: active.napCount,
+			wakeWindows: active.wakeWindows.join(', '),
+			expectedNapDurations: active.expectedNapDurations.join(', '),
+			targetBedtime: active.targetBedtime ?? ''
+		};
+		// An auto-save reload echoes the on-screen values (next === current), so
+		// history is left intact. A Load/Overwrite brings a different plan — treat
+		// that as a fresh document and reset the undo history to it.
+		const external = !snapEqual(next, untrack(snapshot));
+		applySnap(next);
+		if (external) hist = initHistory(next);
 	});
 
 	/** 'HH:MM' → minutes past midnight, or null if not a valid time. */
@@ -277,6 +343,7 @@
 			return;
 		}
 		scheduleSave();
+		scheduleCommit();
 	});
 
 	// --- Add / remove naps: keep the three parallel arrays consistent (windows have
@@ -463,11 +530,33 @@
 		<div class="order-1 space-y-6 lg:order-2 lg:min-w-0 lg:flex-1">
 			<!-- Reference day: a Today-style vertical timeline. Tap any block to edit it. -->
 			<div class="space-y-3 rounded-2xl border border-black/10 p-4 dark:border-white/10">
-				<div class="flex items-baseline justify-between gap-2">
+				<div class="flex items-center justify-between gap-2">
 					<h3 class="text-sm font-semibold">Reference day</h3>
-					{#if plan.ok}
-						<span class="text-xs opacity-60">{plan.wakeClock} → {plan.bedClock}</span>
-					{/if}
+					<div class="flex items-center gap-2">
+						{#if plan.ok}
+							<span class="text-xs opacity-60">{plan.wakeClock} → {plan.bedClock}</span>
+						{/if}
+						<div class="flex items-center gap-0.5">
+							<button
+								type="button"
+								onclick={doUndo}
+								disabled={!canUndo}
+								title="Undo (Ctrl+Z)"
+								aria-label="Undo"
+								class="rounded-lg border border-black/10 px-2 py-1 text-sm leading-none active:scale-95 disabled:opacity-30 dark:border-white/15"
+								>↶</button
+							>
+							<button
+								type="button"
+								onclick={doRedo}
+								disabled={!canRedo}
+								title="Redo (Ctrl+Shift+Z)"
+								aria-label="Redo"
+								class="rounded-lg border border-black/10 px-2 py-1 text-sm leading-none active:scale-95 disabled:opacity-30 dark:border-white/15"
+								>↷</button
+							>
+						</div>
+					</div>
 				</div>
 
 				<p class="text-[0.6875rem] opacity-50">
@@ -869,7 +958,22 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') close();
+		if (e.key === 'Escape') {
+			close();
+			return;
+		}
+		if (!(e.metaKey || e.ctrlKey)) return;
+		// Leave native undo alone while the caret is in a text field.
+		const t = e.target as HTMLElement | null;
+		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+		const k = e.key.toLowerCase();
+		if (k === 'z' && !e.shiftKey) {
+			e.preventDefault();
+			doUndo();
+		} else if ((k === 'z' && e.shiftKey) || k === 'y') {
+			e.preventDefault();
+			doRedo();
+		}
 	}}
 />
 
