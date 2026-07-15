@@ -97,8 +97,64 @@
 		// that as a fresh document and reset the undo history to it.
 		const external = !snapEqual(next, untrack(snapshot));
 		applySnap(next);
-		if (external) hist = initHistory(next);
+		if (external) {
+			hist = initHistory(next);
+			// A different plan invalidates the positional lock arrays — start fresh.
+			locks = {
+				wake: false,
+				bed: false,
+				win: Array(next.napCount + 1).fill(false),
+				nap: Array(next.napCount).fill(false)
+			};
+		}
 	});
+
+	// --- Locks (editor-only manipulation aid; not persisted). A locked entry
+	// keeps its *duration* when a different entry is dragged or resized: the
+	// compensating change chains past locked entries to the first unlocked one.
+	// Wake / bedtime locks pin those two caps in place. Locks only affect the
+	// timeline's direct-manipulation gestures — never the numeric popup edits. ---
+	// svelte-ignore state_referenced_locally
+	let locks = $state<{ wake: boolean; bed: boolean; win: boolean[]; nap: boolean[] }>({
+		wake: false,
+		bed: false,
+		win: Array(data.active.napCount + 1).fill(false),
+		nap: Array(data.active.napCount).fill(false)
+	});
+	const winLocked = (i: number) => locks.win[i] ?? false;
+	const napLocked = (i: number) => locks.nap[i] ?? false;
+	const toggleWin = (i: number) => (locks.win[i] = !winLocked(i));
+	const toggleNap = (i: number) => (locks.nap[i] = !napLocked(i));
+
+	// The flex cascade between wake and bedtime, as an ordered slot list:
+	//   W0, N0, W1, N1, …, W(n-1), N(n-1), Wn
+	// A drag/resize redistributes into the nearest *unlocked* slot, walking this
+	// list and skipping locked ones ("chaining"). Slots between the moved edge
+	// and the absorber are locked, so they carry rigidly (their durations don't
+	// change — only their start times shift, which the cascade handles for free).
+	type Slot = { kind: 'win' | 'nap'; idx: number };
+	function buildChain() {
+		const wins = parseCsv(f.wakeWindows);
+		const naps = parseCsv(f.expectedNapDurations);
+		const slots: Slot[] = [];
+		for (let i = 0; i < naps.length; i++) {
+			slots.push({ kind: 'win', idx: i });
+			slots.push({ kind: 'nap', idx: i });
+		}
+		slots.push({ kind: 'win', idx: naps.length }); // final window → bedtime
+		return { wins, naps, slots };
+	}
+	const slotDur = (wins: number[], naps: number[], s: Slot) =>
+		s.kind === 'win' ? (wins[s.idx] ?? 0) : (naps[s.idx] ?? 0);
+	const slotLocked = (s: Slot) => (s.kind === 'win' ? winLocked(s.idx) : napLocked(s.idx));
+	/** First unlocked slot walking from position `from` in `dir` (±1), or null. */
+	function firstUnlocked(slots: Slot[], from: number, dir: 1 | -1): Slot | null {
+		for (let k = from + dir; k >= 0 && k < slots.length; k += dir) {
+			if (!slotLocked(slots[k])) return slots[k];
+		}
+		return null;
+	}
+	const setSlot = (s: Slot, v: number) => (s.kind === 'win' ? setWin(s.idx, v) : setNap(s.idx, v));
 
 	/** 'HH:MM' → minutes past midnight, or null if not a valid time. */
 	function parseHM(v: string): number | null {
@@ -262,23 +318,6 @@
 
 	const SNAP_MIN = 5;
 
-	// Write two wake windows (or a nap duration + a window) at once — a single
-	// reparse/join, so a redistribution stays atomic.
-	function setWindows2(i: number, vi: number, j: number, vj: number) {
-		const a = parseCsv(f.wakeWindows);
-		a[i] = Math.max(0, Math.round(vi));
-		a[j] = Math.max(0, Math.round(vj));
-		f.wakeWindows = a.join(', ');
-	}
-	function setNapAndWindow(napIdx: number, dur: number, winIdx: number, win: number) {
-		const nd = parseCsv(f.expectedNapDurations);
-		nd[napIdx] = Math.max(0, Math.round(dur));
-		f.expectedNapDurations = nd.join(', ');
-		const ww = parseCsv(f.wakeWindows);
-		ww[winIdx] = Math.max(0, Math.round(win));
-		f.wakeWindows = ww.join(', ');
-	}
-	const finalWinIdx = () => Math.max(0, parseCsv(f.wakeWindows).length - 1);
 	/** Set the reference wake to a minutes-of-day value (wrapped to 00:00–23:59). */
 	function setWakeFromMin(minOfDay: number) {
 		const v = ((Math.round(minOfDay) % 1440) + 1440) % 1440;
@@ -296,30 +335,40 @@
 	let resizing = $state<{ idx: number; edge: 'top' | 'bottom' } | null>(null);
 	let rzStartY = 0;
 	let rzDur = 0;
-	let rzWin = 0; // the window that absorbs the change (following or preceding)
+	let rzAbs: Slot | null = null; // the slot that absorbs the change (may chain past locked ones)
+	let rzAbsDur = 0;
 	function beginResize(e: PointerEvent, napIdx: number, edge: 'top' | 'bottom') {
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		// Absorb downstream for the bottom grip, upstream for the top grip; skip any
+		// locked slots in between (they carry rigidly). Nothing unlocked that way →
+		// the resize is blocked (there's no room to give without changing a lock).
+		const { wins, naps, slots } = buildChain();
+		const p = slots.findIndex((s) => s.kind === 'nap' && s.idx === napIdx);
+		const abs = firstUnlocked(slots, p, edge === 'bottom' ? 1 : -1);
+		if (!abs) return;
 		resizing = { idx: napIdx, edge };
 		rzStartY = e.clientY;
 		rzDur = napAt(napIdx);
-		rzWin = winAt(edge === 'bottom' ? napIdx + 1 : napIdx);
+		rzAbs = abs;
+		rzAbsDur = slotDur(wins, naps, abs);
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		e.preventDefault();
 	}
 	function moveResize(e: PointerEvent) {
-		if (!resizing) return;
+		if (!resizing || !rzAbs) return;
 		const raw = Math.round((e.clientY - rzStartY) / PX_PER_MIN / SNAP_MIN) * SNAP_MIN;
 		// Dragging the bottom grip down (raw > 0) or the top grip up (raw < 0) both grow
-		// the nap; the absorbing window shrinks by the same amount.
+		// the nap; the absorbing slot shrinks by the same amount.
 		const delta = resizing.edge === 'bottom' ? raw : -raw;
-		const d = Math.min(rzWin, Math.max(-rzDur, delta)); // keep duration and window ≥ 0
-		const winIdx = resizing.edge === 'bottom' ? resizing.idx + 1 : resizing.idx;
-		setNapAndWindow(resizing.idx, rzDur + d, winIdx, rzWin - d);
+		const d = Math.min(rzAbsDur, Math.max(-rzDur, delta)); // keep both ≥ 0
+		setNap(resizing.idx, rzDur + d);
+		setSlot(rzAbs, rzAbsDur - d);
 	}
 	function endResize(e: PointerEvent) {
 		if (!resizing) return;
 		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
 		resizing = null;
+		rzAbs = null;
 	}
 
 	// --- Auto-save: every timeline / popup / Advanced edit persists on its own
@@ -353,10 +402,14 @@
 		const nd = parseCsv(f.expectedNapDurations);
 		const n = nd.length;
 		nd.push(nd[n - 1] ?? 60); // clone the last nap's duration
-		ww.splice(Math.max(0, ww.length - 1), 0, ww[n] ?? ww[n - 1] ?? 90); // insert before the bedtime window
+		const winInsert = Math.max(0, ww.length - 1);
+		ww.splice(winInsert, 0, ww[n] ?? ww[n - 1] ?? 90); // insert before the bedtime window
 		f.expectedNapDurations = nd.join(', ');
 		f.wakeWindows = ww.join(', ');
 		f.napCount = n + 1;
+		// Mirror the structural change in the lock arrays.
+		locks.nap.push(false);
+		locks.win.splice(winInsert, 0, false);
 	}
 	function removeNap(i: number) {
 		const ww = parseCsv(f.wakeWindows);
@@ -367,18 +420,22 @@
 		f.expectedNapDurations = nd.join(', ');
 		f.wakeWindows = ww.join(', ');
 		f.napCount = nd.length;
+		locks.nap.splice(i, 1);
+		locks.win.splice(i, 1);
 		close();
 	}
 
 	// --- Drag a nap body or a cap. Adaptive: a mouse/pen drags directly; touch must
 	// long-press first, so the timeline keeps scrolling until the gesture "lifts". A
 	// pure click (no move) falls through to open the popup. Behaviours:
-	//  • nap-move  — the nap slides between its two neighbouring windows: the one
-	//    before shrinks while the one after grows by the same amount (and vice versa),
-	//    so its duration, bedtime and every other sleep stay put.
+	//  • nap-move  — the nap slides rigidly: the nearest unlocked slot above it
+	//    grows while the nearest unlocked slot below shrinks by the same amount
+	//    (and vice versa), so its duration, bedtime and every other sleep stay put.
+	//    Locked slots between are carried along with the nap.
 	//  • day-start — shifts the reference wake time (the whole day re-times).
-	//  • bedtime   — grows/shrinks the final window (bedtime moves; nothing above).
-	// A future "lock" mode could instead carry a locked window rigidly with the nap.
+	//  • bedtime   — grows/shrinks the nearest unlocked slot at the tail (bedtime
+	//    moves; everything above the absorbed slot stays put).
+	// Wake / bedtime locks disable the day-start / bedtime drags respectively.
 	type DragSpec =
 		| { type: 'none' }
 		| { type: 'nap-move'; index: number }
@@ -395,25 +452,40 @@
 		let moved = false;
 		let lpTimer: ReturnType<typeof setTimeout> | undefined;
 		// Values captured at gesture start, so each move is relative to a fixed base.
-		const start = { before: 0, after: 0, final: 0, wake: 0 };
+		// `above`/`below`/`tail` are the unlocked slots this gesture flexes into
+		// (resolved once at gesture start, since locks don't change mid-drag).
+		const start = { above: 0, below: 0, tail: 0, wake: 0 };
+		let aboveSlot: Slot | null = null;
+		let belowSlot: Slot | null = null;
+		let tailSlot: Slot | null = null;
 		const SLOP = 6;
 
 		const capture = () => {
 			if (spec.type === 'nap-move') {
-				start.before = winAt(spec.index);
-				start.after = winAt(spec.index + 1);
+				const napIndex = spec.index;
+				const { wins, naps, slots } = buildChain();
+				const p = slots.findIndex((s) => s.kind === 'nap' && s.idx === napIndex);
+				aboveSlot = firstUnlocked(slots, p, -1);
+				belowSlot = firstUnlocked(slots, p, 1);
+				start.above = aboveSlot ? slotDur(wins, naps, aboveSlot) : 0;
+				start.below = belowSlot ? slotDur(wins, naps, belowSlot) : 0;
 			} else if (spec.type === 'bedtime') {
-				start.final = winAt(finalWinIdx());
+				const { wins, naps, slots } = buildChain();
+				tailSlot = firstUnlocked(slots, slots.length, -1); // nearest unlocked from the end
+				start.tail = tailSlot ? slotDur(wins, naps, tailSlot) : 0;
 			} else if (spec.type === 'day-start') {
 				start.wake = parseHM(f.referenceWakeTime) ?? 0;
 			}
 		};
 		const applyDelta = (d: number) => {
 			if (spec.type === 'nap-move') {
-				const dd = Math.min(start.after, Math.max(-start.before, d)); // both windows ≥ 0
-				setWindows2(spec.index, start.before + dd, spec.index + 1, start.after - dd);
+				if (!aboveSlot || !belowSlot) return; // no room to translate → pinned
+				const dd = Math.min(start.below, Math.max(-start.above, d)); // both slots ≥ 0
+				setSlot(aboveSlot, start.above + dd);
+				setSlot(belowSlot, start.below - dd);
 			} else if (spec.type === 'bedtime') {
-				setWin(finalWinIdx(), Math.max(0, start.final + d));
+				if (!tailSlot) return;
+				setSlot(tailSlot, Math.max(0, start.tail + d));
 			} else if (spec.type === 'day-start') {
 				setWakeFromMin(start.wake + d);
 			}
@@ -427,6 +499,9 @@
 		};
 		const onDown = (e: PointerEvent) => {
 			if (spec.type === 'none') return;
+			// A locked cap is pinned — its drag is disabled (tap still opens the editor).
+			if (spec.type === 'day-start' && locks.wake) return;
+			if (spec.type === 'bedtime' && locks.bed) return;
 			if (e.pointerType === 'mouse' && e.button !== 0) return;
 			pointerId = e.pointerId;
 			startY = e.clientY;
@@ -505,6 +580,24 @@
 	}
 </script>
 
+<!-- Lock toggle overlaid at a block's top-right corner. Sits above the block and
+     its resize grips so a tap here pins/unpins instead of dragging or editing. -->
+{#snippet lockToggle(topPx: number, locked: boolean, onToggle: () => void, label: string)}
+	<button
+		type="button"
+		aria-pressed={locked}
+		aria-label={label}
+		title={locked ? 'Locked — length is pinned. Tap to unlock.' : 'Tap to lock this length.'}
+		onclick={onToggle}
+		class="absolute right-1 z-30 flex h-6 w-6 items-center justify-center rounded-md text-[0.75rem] leading-none transition-opacity {locked
+			? 'opacity-100'
+			: 'opacity-35 hover:opacity-90'}"
+		style="top: {topPx + 2}px"
+	>
+		{locked ? '🔒' : '🔓'}
+	</button>
+{/snippet}
+
 <section class="space-y-6">
 	<div>
 		<h2 class="text-xl font-semibold">Plan</h2>
@@ -561,7 +654,8 @@
 
 				<p class="text-[0.6875rem] opacity-50">
 					Tap to edit · drag a nap or a cap to move · drag a nap's <span class="opacity-80">⇕</span>
-					grip to resize.
+					grip to resize · tap <span class="opacity-80">🔓</span> to lock an entry's length so edits skip
+					past it.
 				</p>
 
 				{#if !plan.ok}
@@ -590,17 +684,24 @@
 								if (suppressClick) return;
 								editing = { kind: 'wake' };
 							}}
-							class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/20 px-3 pb-1.5 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {movingSpec?.type ===
-							'day-start'
-								? 'ring-2 ring-indigo-500'
-								: ''}"
+							class="absolute right-0 left-14 flex touch-pan-y flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/20 px-3 pb-1.5 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {locks.wake
+								? 'cursor-pointer ring-1 ring-amber-500/70'
+								: 'cursor-grab'} {movingSpec?.type === 'day-start' ? 'ring-2 ring-indigo-500' : ''}"
 							style="top: 0; height: {y(0)}px"
 						>
 							<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
 								🌅 Day starts {plan.wakeClock}
 							</p>
-							<p class="truncate text-xs opacity-70">drag or tap to set the wake time</p>
+							<p class="truncate text-xs opacity-70">
+								{locks.wake ? 'wake time locked' : 'drag or tap to set the wake time'}
+							</p>
 						</button>
+						{@render lockToggle(
+							0,
+							locks.wake,
+							() => (locks.wake = !locks.wake),
+							`${locks.wake ? 'Unlock' : 'Lock'} wake time`
+						)}
 
 						<!-- Awake windows + naps -->
 						{#each plan.blocks as b (b.kind + b.idx)}
@@ -608,6 +709,7 @@
 							{@const h = Math.max(y(b.endMin) - top, 20)}
 							{@const isNap = b.kind === 'nap'}
 							{@const moving = movingSpec?.type === 'nap-move' && movingSpec.index === b.idx}
+							{@const locked = isNap ? napLocked(b.idx) : winLocked(b.idx)}
 							<button
 								type="button"
 								use:movable={{
@@ -617,19 +719,27 @@
 									if (suppressClick) return;
 									editing = isNap ? { kind: 'nap', index: b.idx } : { kind: 'awake', index: b.idx };
 								}}
-								class="absolute right-0 left-14 flex touch-pan-y flex-col justify-center overflow-hidden rounded-lg border px-3 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {isNap
+								class="absolute right-0 left-14 flex touch-pan-y flex-col justify-center overflow-hidden rounded-lg border px-3 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {isNap
 									? `cursor-grab border-indigo-500/40 bg-indigo-500/25 ${moving ? 'z-10 cursor-grabbing ring-2 ring-indigo-500' : ''}`
-									: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'}"
+									: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'} {locked
+									? 'ring-1 ring-amber-500/70'
+									: ''}"
 								style="top: {top}px; height: {h}px"
 							>
 								<p class="truncate text-sm font-medium {isNap ? '' : 'opacity-70'}">
-									{isNap ? `Nap ${b.idx + 1}` : 'Awake'}
+									{isNap ? `Nap ${b.idx + 1}` : 'Awake'}{locked ? ' · locked' : ''}
 								</p>
 								<p class="truncate text-xs opacity-60">
 									{b.startClock}–{b.endClock} · {fmtDur(b.min)}
 								</p>
 							</button>
-							{#if isNap}
+							{@render lockToggle(
+								top,
+								locked,
+								() => (isNap ? toggleNap(b.idx) : toggleWin(b.idx)),
+								`${locked ? 'Unlock' : 'Lock'} ${isNap ? `nap ${b.idx + 1}` : `awake window ${b.idx + 1}`}`
+							)}
+							{#if isNap && !locked}
 								<!-- Top grip → grow this nap upward; the preceding window absorbs it -->
 								<button
 									type="button"
@@ -676,10 +786,9 @@
 								if (suppressClick) return;
 								editing = { kind: 'bed' };
 							}}
-							class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {movingSpec?.type ===
-							'bedtime'
-								? 'ring-2 ring-indigo-500'
-								: ''}"
+							class="absolute right-0 left-14 flex touch-pan-y flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {locks.bed
+								? 'cursor-pointer ring-1 ring-amber-500/70'
+								: 'cursor-grab'} {movingSpec?.type === 'bedtime' ? 'ring-2 ring-indigo-500' : ''}"
 							style="top: {y(plan.bedMin)}px; height: {BOTTOM_PAD}px"
 						>
 							<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
@@ -690,6 +799,12 @@
 									>{/if}
 							</p>
 						</button>
+						{@render lockToggle(
+							y(plan.bedMin),
+							locks.bed,
+							() => (locks.bed = !locks.bed),
+							`${locks.bed ? 'Unlock' : 'Lock'} bedtime`
+						)}
 					</div>
 
 					<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs opacity-70">
@@ -977,6 +1092,26 @@
 	}}
 />
 
+<!-- A lock toggle row for use inside the editor popups. -->
+{#snippet lockRow(
+	locked: boolean,
+	onToggle: () => void,
+	lockedLabel: string,
+	unlockedLabel: string
+)}
+	<button
+		type="button"
+		onclick={onToggle}
+		aria-pressed={locked}
+		class="mt-3 flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs font-medium {locked
+			? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+			: 'border-black/15 opacity-70 hover:opacity-100 dark:border-white/20'}"
+	>
+		<span>{locked ? lockedLabel : unlockedLabel}</span>
+		<span class="opacity-60">{locked ? 'unlock' : 'lock'}</span>
+	</button>
+{/snippet}
+
 <!-- Shared editor body, rendered inside whichever window style is selected. -->
 {#snippet editorBody(e: Editing)}
 	<div class="mb-3 flex items-center justify-between gap-2">
@@ -994,6 +1129,12 @@
 			Reference wake
 			<input type="time" bind:value={f.referenceWakeTime} class={inputClass} />
 		</label>
+		{@render lockRow(
+			locks.wake,
+			() => (locks.wake = !locks.wake),
+			'🔒 Wake time is pinned',
+			'🔓 Pin the wake time'
+		)}
 	{:else if e.kind === 'awake'}
 		<label class="block text-xs font-medium opacity-70">
 			Awake window (minutes)
@@ -1007,6 +1148,12 @@
 				class={inputClass}
 			/>
 		</label>
+		{@render lockRow(
+			winLocked(e.index),
+			() => toggleWin(e.index),
+			"🔒 This window's length is locked",
+			"🔓 Lock this window's length"
+		)}
 	{:else if e.kind === 'nap'}
 		<div class="grid grid-cols-2 gap-3">
 			<label class="block text-xs font-medium opacity-70">
@@ -1034,6 +1181,12 @@
 				/>
 			</label>
 		</div>
+		{@render lockRow(
+			napLocked(e.index),
+			() => toggleNap(e.index),
+			"🔒 This nap's length is locked",
+			"🔓 Lock this nap's length"
+		)}
 		<button
 			type="button"
 			onclick={() => removeNap(e.index)}
@@ -1062,6 +1215,12 @@
 					>Set it to redistribute remaining sleeps onto a fixed bedtime.</span
 				>
 			</label>
+			{@render lockRow(
+				locks.bed,
+				() => (locks.bed = !locks.bed),
+				'🔒 Bedtime is pinned',
+				'🔓 Pin the bedtime'
+			)}
 		</div>
 	{/if}
 
