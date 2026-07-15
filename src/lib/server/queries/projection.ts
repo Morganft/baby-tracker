@@ -4,14 +4,21 @@
  * now" home and the Today timeline so both re-anchor identically on every log.
  */
 import { getActiveTemplate } from './templates';
+import { getDayOverride } from './dayOverride';
+import { localDateKey } from './day';
 import { getSettings } from './settings';
 import { assembleDay } from './sleeps';
 import { project } from '$lib/projection/project';
 import type { Projection } from '$lib/projection/types';
 
-/** Build the projection for `now` in `timeZone` from the active template + DB. */
+/**
+ * Build the projection for `now` in `timeZone`. Uses today's per-day plan overlay
+ * when one exists (REQUIREMENTS §5.3.6), else the persistent active template —
+ * either way the active slot is never mutated and the overlay expires with its day.
+ */
 export function buildProjection(now: number, timeZone: string): Projection {
-	const template = getActiveTemplate();
+	// A per-day overlay reshapes just today; absent one, the active slot drives the day.
+	const template = getDayOverride(localDateKey(now, timeZone)) ?? getActiveTemplate();
 	const settings = getSettings();
 	const { sleeps, morningWake } = assembleDay(now, timeZone);
 	return project({

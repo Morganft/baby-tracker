@@ -29,6 +29,13 @@
       "when": 1783765988376,
       "tag": "0003_thankful_cargill",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784131493957,
+      "tag": "0004_many_the_twelve",
+      "breakpoints": true
     }
   ]
 }

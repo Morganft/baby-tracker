@@ -3,6 +3,18 @@
 	import { resolve } from '$app/paths';
 	import { fmtTime, fmtDuration, fmtZoneAbbrev, toTimeInput } from '$lib/format';
 	import { editInit, createInit, createFrom, type SleepFormInit } from '$lib/timeline/sleepForm';
+	import {
+		buildChain,
+		firstUnlocked,
+		slotDur,
+		pxToMin,
+		applyResize,
+		applyMove,
+		applyBedtime,
+		addNap as addNapArr,
+		removeNap as removeNapArr,
+		type Slot
+	} from '$lib/timeline/planEdit';
 	import type { PageData, ActionData } from './$types';
 	import type { ProjectedSleep } from '$lib/projection/types';
 
@@ -102,7 +114,9 @@
 		const ends = sleeps.map((s) => s.projectedEnd ?? s.start);
 		const starts = sleeps.map((s) => s.start);
 		const start = Math.min(data.projection.anchor, nowMs, ...starts) - PAD_MS;
-		const end = Math.max(data.projection.anchor, nowMs, ...ends) + PAD_MS;
+		// Include the client-side edited tail's bedtime so the container grows as you
+		// drag bedtime later (the server projection only catches up after a save).
+		const end = Math.max(data.projection.anchor, nowMs, tail.bedStart, ...ends) + PAD_MS;
 		// Guard against a zero span (no sleeps yet) so the scale stays finite.
 		return { start, end: end > start ? end : start + 3_600_000 };
 	});
@@ -140,11 +154,325 @@
 	};
 
 	const typeLabel = (t: 'nap' | 'night', i: number) => (t === 'night' ? 'Bedtime' : `Nap ${i + 1}`);
+
+	// ---------------------------------------------------------------------------
+	// Inline editing of the *projected tail* (today only). Reshape the future naps /
+	// windows / bedtime with the same gestures as the Plan editor, persisted to a
+	// per-day overlay that never touches the saved plan and expires tomorrow. The
+	// completed / in-progress prefix stays fixed; only the projected tail is editable.
+	// ---------------------------------------------------------------------------
+	const MS = 60_000;
+	// Naps already logged today (completed or in progress) — the tail starts after them.
+	const loggedNaps = $derived(
+		sleeps.filter((s) => s.type === 'nap' && s.status !== 'projected').length
+	);
+	// Editable only while tonight's bedtime is still projected (nothing to reshape once
+	// it's logged / the day is over).
+	const editable = $derived(sleeps.some((s) => s.type === 'night' && s.status === 'projected'));
+	// Where the projected tail begins: the end of the last fixed sleep, else the anchor.
+	const lastWake = $derived.by(() => {
+		const done = sleeps.filter((s) => s.status !== 'projected');
+		if (done.length === 0) return data.projection.anchor;
+		const last = done[done.length - 1];
+		return last.projectedEnd ?? last.end ?? last.start;
+	});
+
+	// The editable template's tail as plain arrays (minutes). Seeded once, re-seeded
+	// whenever the server sends a new plan (a save echo or a reset).
+	function seedTail() {
+		const wins = data.plan.wakeWindows.slice();
+		const naps = data.plan.expectedNapDurations.slice();
+		const napCount = data.plan.napCount;
+		// No overlay yet: freeze the *current forecast* into the cascade so entering edit
+		// is seamless — copy each projected sleep's shown window / duration into its slot.
+		if (!data.overrideActive) {
+			for (const sp of data.projection.sleeps) {
+				if (sp.status !== 'projected') continue;
+				wins[sp.index] = sp.wakeWindowBeforeMin;
+				if (sp.type === 'nap' && sp.projectedEnd != null) {
+					naps[sp.index] = Math.round((sp.projectedEnd - sp.start) / MS);
+				}
+			}
+		}
+		return { napCount, wins, naps };
+	}
+	let f = $state(seedTail());
+	const serial = (x: { napCount: number; wins: number[]; naps: number[] } = f) =>
+		`${x.napCount}|${x.wins.join(',')}|${x.naps.join(',')}`;
+	let lastSaved = serial();
+	// svelte-ignore state_referenced_locally
+	let seededFrom = data.plan;
+	$effect(() => {
+		if (data.plan === seededFrom) return; // a fresh server load (save echo / reset)
+		seededFrom = data.plan;
+		f = seedTail();
+		lastSaved = serial();
+	});
+
+	// The tail laid out on the wall-clock axis, cascaded from `lastWake` through `f`.
+	const tail = $derived.by(() => {
+		const blocks: {
+			kind: 'awake' | 'nap';
+			idx: number;
+			start: number;
+			end: number;
+			min: number;
+		}[] = [];
+		if (!editable) return { blocks, bedStart: lastWake };
+		let cursor = lastWake;
+		for (let i = loggedNaps; i < f.napCount; i++) {
+			const w = f.wins[i] ?? 0;
+			blocks.push({ kind: 'awake', idx: i, start: cursor, end: cursor + w * MS, min: w });
+			cursor += w * MS;
+			const d = f.naps[i] ?? 0;
+			blocks.push({ kind: 'nap', idx: i, start: cursor, end: cursor + d * MS, min: d });
+			cursor += d * MS;
+		}
+		const wl = f.wins[f.napCount] ?? 0;
+		blocks.push({ kind: 'awake', idx: f.napCount, start: cursor, end: cursor + wl * MS, min: wl });
+		cursor += wl * MS;
+		return { blocks, bedStart: cursor };
+	});
+
+	// Tapping a projected tail block still logs a sleep, prefilled from its shown time.
+	const openTailNap = (b: { start: number; end: number }) =>
+		(popup = createFrom({ start: b.start, end: b.end, type: 'nap' }, tz));
+	const openTailBed = () =>
+		(popup = createFrom({ start: tail.bedStart, end: null, type: 'night' }, tz));
+
+	// --- Persist: debounced hidden-form submit to the overlay on any tail change. ---
+	let saveFormEl = $state<HTMLFormElement | null>(null);
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => {
+		if (serial() === lastSaved) return; // seed / echo → nothing to persist
+		clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => saveFormEl?.requestSubmit(), 600);
+	});
+
+	// --- Add / remove a projected nap (clamped so it can't drop below logged naps). ---
+	function addNap() {
+		const r = addNapArr(f.wins, f.naps);
+		f.wins = r.wins;
+		f.naps = r.naps;
+		f.napCount = r.naps.length;
+	}
+	function removeNap(i: number) {
+		if (f.napCount <= loggedNaps) return;
+		const r = removeNapArr(f.wins, f.naps, i);
+		f.wins = r.wins;
+		f.naps = r.naps;
+		f.napCount = r.naps.length;
+	}
+
+	// --- Resize a projected nap by dragging a grip; a neighbouring window absorbs it. ---
+	let resizing = $state<{ idx: number; edge: 'top' | 'bottom' } | null>(null);
+	let rzStartY = 0;
+	let rzDur = 0;
+	let rzAbs: Slot | null = null;
+	let rzAbsDur = 0;
+	function beginResize(e: PointerEvent, napIdx: number, edge: 'top' | 'bottom') {
+		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		const slots = buildChain(f.napCount, loggedNaps);
+		const p = slots.findIndex((s) => s.kind === 'nap' && s.idx === napIdx);
+		const abs = firstUnlocked(slots, p, edge === 'bottom' ? 1 : -1);
+		if (!abs) return;
+		resizing = { idx: napIdx, edge };
+		rzStartY = e.clientY;
+		rzDur = f.naps[napIdx] ?? 0;
+		rzAbs = abs;
+		rzAbsDur = slotDur(f.wins, f.naps, abs);
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function moveResize(e: PointerEvent) {
+		if (!resizing || !rzAbs) return;
+		const raw = pxToMin(e.clientY - rzStartY, PX_PER_MIN);
+		const delta = resizing.edge === 'bottom' ? raw : -raw;
+		const r = applyResize(f.wins, f.naps, {
+			napIdx: resizing.idx,
+			absorb: rzAbs,
+			napStart: rzDur,
+			absorbStart: rzAbsDur,
+			deltaMin: delta
+		});
+		f.wins = r.wins;
+		f.naps = r.naps;
+	}
+	function endResize(e: PointerEvent) {
+		if (!resizing) return;
+		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+		resizing = null;
+		rzAbs = null;
+	}
+
+	// --- Drag a nap body (move) or the bedtime cap (float bedtime). Mirrors the Plan
+	// editor's `movable`: mouse/pen drag directly, touch long-presses first so the page
+	// keeps scrolling; a pure tap falls through to the log popup. ---
+	type DragSpec = { type: 'nap-move'; index: number } | { type: 'bedtime' };
+	let movingSpec = $state<DragSpec | null>(null);
+	let suppressClick = false;
+	function movable(node: HTMLElement, initial: { spec: DragSpec }) {
+		let spec = initial.spec;
+		let pointerId = -1;
+		let startY = 0;
+		let lastY = 0;
+		let armed = false;
+		let moved = false;
+		let lpTimer: ReturnType<typeof setTimeout> | undefined;
+		const start = { above: 0, below: 0, tail: 0 };
+		let aboveSlot: Slot | null = null;
+		let belowSlot: Slot | null = null;
+		let tailSlot: Slot | null = null;
+		const SLOP = 6;
+
+		const capture = () => {
+			const sp = spec;
+			const slots = buildChain(f.napCount, loggedNaps);
+			if (sp.type === 'nap-move') {
+				const p = slots.findIndex((s) => s.kind === 'nap' && s.idx === sp.index);
+				aboveSlot = firstUnlocked(slots, p, -1);
+				belowSlot = firstUnlocked(slots, p, 1);
+				start.above = aboveSlot ? slotDur(f.wins, f.naps, aboveSlot) : 0;
+				start.below = belowSlot ? slotDur(f.wins, f.naps, belowSlot) : 0;
+			} else {
+				tailSlot = firstUnlocked(slots, slots.length, -1);
+				start.tail = tailSlot ? slotDur(f.wins, f.naps, tailSlot) : 0;
+			}
+		};
+		const applyDelta = (d: number) => {
+			const sp = spec;
+			if (sp.type === 'nap-move') {
+				if (!aboveSlot || !belowSlot) return;
+				const r = applyMove(f.wins, f.naps, {
+					above: aboveSlot,
+					below: belowSlot,
+					aboveStart: start.above,
+					belowStart: start.below,
+					deltaMin: d
+				});
+				f.wins = r.wins;
+				f.naps = r.naps;
+			} else {
+				if (!tailSlot) return;
+				const r = applyBedtime(f.wins, f.naps, {
+					tail: tailSlot,
+					tailStart: start.tail,
+					deltaMin: d
+				});
+				f.wins = r.wins;
+				f.naps = r.naps;
+			}
+		};
+		const arm = () => {
+			armed = true;
+			moved = false;
+			capture();
+			movingSpec = spec;
+		};
+		const onDown = (e: PointerEvent) => {
+			if (e.pointerType === 'mouse' && e.button !== 0) return;
+			pointerId = e.pointerId;
+			startY = e.clientY;
+			lastY = e.clientY;
+			moved = false;
+			if (e.pointerType === 'touch') {
+				armed = false;
+				lpTimer = setTimeout(() => {
+					startY = lastY;
+					try {
+						node.setPointerCapture(pointerId);
+					} catch {
+						/* pointer may be gone */
+					}
+					arm();
+				}, 400);
+			} else {
+				try {
+					node.setPointerCapture(pointerId);
+				} catch {
+					/* ignore */
+				}
+				arm();
+			}
+		};
+		const onMove = (e: PointerEvent) => {
+			lastY = e.clientY;
+			if (!armed) {
+				if (Math.abs(e.clientY - startY) > SLOP) clearTimeout(lpTimer);
+				return;
+			}
+			const d = pxToMin(e.clientY - startY, PX_PER_MIN);
+			if (d !== 0) moved = true;
+			applyDelta(d);
+			e.preventDefault();
+		};
+		const onTouchMove = (e: TouchEvent) => {
+			if (armed) e.preventDefault();
+		};
+		const onUp = (e: PointerEvent) => {
+			clearTimeout(lpTimer);
+			if (moved) {
+				suppressClick = true;
+				setTimeout(() => (suppressClick = false), 0);
+			}
+			armed = false;
+			movingSpec = null;
+			try {
+				node.releasePointerCapture(e.pointerId);
+			} catch {
+				/* capture may already be released */
+			}
+		};
+
+		node.addEventListener('pointerdown', onDown);
+		node.addEventListener('pointermove', onMove);
+		node.addEventListener('pointerup', onUp);
+		node.addEventListener('pointercancel', onUp);
+		node.addEventListener('touchmove', onTouchMove, { passive: false });
+		return {
+			update(p: { spec: DragSpec }) {
+				spec = p.spec;
+			},
+			destroy() {
+				clearTimeout(lpTimer);
+				node.removeEventListener('pointerdown', onDown);
+				node.removeEventListener('pointermove', onMove);
+				node.removeEventListener('pointerup', onUp);
+				node.removeEventListener('pointercancel', onUp);
+				node.removeEventListener('touchmove', onTouchMove);
+			}
+		};
+	}
 </script>
 
 <section class="space-y-4">
-	<div class="flex items-center justify-between">
-		<h2 class="text-xl font-semibold">Today</h2>
+	<div class="flex items-center justify-between gap-2">
+		<div class="flex items-center gap-2">
+			<h2 class="text-xl font-semibold">Today</h2>
+			{#if data.overrideActive}
+				<span
+					class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+				>
+					Adjusted for today
+				</span>
+				<form
+					method="POST"
+					action="?/resetOverlay"
+					use:enhance
+					onsubmit={(e) => {
+						if (!confirm('Discard today’s plan changes and use your saved plan?'))
+							e.preventDefault();
+					}}
+				>
+					<button
+						type="submit"
+						class="text-[11px] font-medium text-indigo-600 underline active:scale-95 dark:text-indigo-400"
+					>
+						Reset
+					</button>
+				</form>
+			{/if}
+		</div>
 		<a
 			href={resolve('/add?from=/timeline')}
 			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
@@ -201,84 +529,193 @@
 			</span>
 		</button>
 
-		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start -->
+		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start.
+		     When the tail is editable, its projected windows are drawn by the tail
+		     editor below instead, so skip the planned ones here. -->
 		{#each windows as w (w.start)}
-			{@const top = pos(w.start)}
-			{@const h = Math.max(pos(w.end) - top, 22)}
-			<div
-				class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 {w.planned
-					? 'border-dashed border-black/15 bg-black/[0.02] dark:border-white/15 dark:bg-white/[0.02]'
-					: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'}"
-				style="top: {top}px; height: {h}px"
-			>
-				<p class="truncate text-sm font-medium opacity-70">
-					Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400"> · short</span>{/if}
-				</p>
-				<p class="truncate text-xs opacity-60">
-					{time(w.start)}–{time(w.end)} · {fmtDuration(w.min)}
-				</p>
-			</div>
-		{/each}
-
-		<!-- Sleep blocks -->
-		{#each sleeps as s, i (s.index)}
-			{@const top = pos(s.start)}
-			{#if s.type === 'night'}
-				<!-- Bedtime: open-ended (the day's close), rendered as a block that
-				     fills the bottom pad below its start. -->
-				{@const end = s.projectedEnd ?? s.start + PAD_MS}
-				{@const h = Math.max(pos(end) - top, 22) + BOTTOM_PAD_PX}
-				<button
-					type="button"
-					onclick={() => openSleep(s)}
-					class="absolute right-0 left-14 flex flex-col justify-start overflow-hidden rounded-t-lg text-left transition active:scale-[0.99] border border-b-0 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 {s.status ===
-					'projected'
-						? 'border-dashed border-indigo-400/60'
-						: 'border-indigo-500/40'}"
+			{#if !(editable && w.planned)}
+				{@const top = pos(w.start)}
+				{@const h = Math.max(pos(w.end) - top, 22)}
+				<div
+					class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 {w.planned
+						? 'border-dashed border-black/15 bg-black/[0.02] dark:border-white/15 dark:bg-white/[0.02]'
+						: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'}"
 					style="top: {top}px; height: {h}px"
 				>
-					<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
-						🌙 {typeLabel(s.type, i)}
-						{#if s.status === 'projected'}<span class="font-normal opacity-60">
-								· planned</span
-							>{/if}{#if zoneChip(s)}<span
-								class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
-								>{zoneChip(s)}</span
-							>{/if}
-					</span>
-					<span class="block truncate text-xs opacity-70">{time(s.start)}</span>
-				</button>
-			{:else}
-				{@const end = s.projectedEnd ?? s.start}
-				{@const h = Math.max(pos(end) - top, 22)}
-				<button
-					type="button"
-					onclick={() => openSleep(s)}
-					class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 text-left transition active:scale-[0.99] {statusStyle[
-						s.status
-					]}"
-					style="top: {top}px; height: {h}px"
-				>
-					<span class="block truncate text-sm font-medium">
-						{typeLabel(s.type, i)}
-						{#if s.tooShort}<span class="text-amber-600 dark:text-amber-400">
+					<p class="truncate text-sm font-medium opacity-70">
+						Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400">
 								· short</span
-							>{/if}{#if zoneChip(s)}<span
-								class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
-								>{zoneChip(s)}</span
 							>{/if}
-					</span>
-					<span class="block truncate text-xs opacity-70">
-						{time(s.start)}–{time(end)}
-						{#if s.durationMin != null}· {fmtDuration(
-								s.durationMin
-							)}{:else if s.status === 'projected'}· ~{fmtDuration(
-								Math.round((end - s.start) / 60_000)
-							)}{/if}
-					</span>
-				</button>
+					</p>
+					<p class="truncate text-xs opacity-60">
+						{time(w.start)}–{time(w.end)} · {fmtDuration(w.min)}
+					</p>
+				</div>
 			{/if}
 		{/each}
+
+		<!-- Sleep blocks. Projected ones are drawn by the editable tail below when
+		     editing is available, so skip them here. -->
+		{#each sleeps as s, i (s.index)}
+			{#if !(editable && s.status === 'projected')}
+				{@const top = pos(s.start)}
+				{#if s.type === 'night'}
+					<!-- Bedtime: open-ended (the day's close), rendered as a block that
+				     fills the bottom pad below its start. -->
+					{@const end = s.projectedEnd ?? s.start + PAD_MS}
+					{@const h = Math.max(pos(end) - top, 22) + BOTTOM_PAD_PX}
+					<button
+						type="button"
+						onclick={() => openSleep(s)}
+						class="absolute right-0 left-14 flex flex-col justify-start overflow-hidden rounded-t-lg text-left transition active:scale-[0.99] border border-b-0 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 {s.status ===
+						'projected'
+							? 'border-dashed border-indigo-400/60'
+							: 'border-indigo-500/40'}"
+						style="top: {top}px; height: {h}px"
+					>
+						<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+							🌙 {typeLabel(s.type, i)}
+							{#if s.status === 'projected'}<span class="font-normal opacity-60">
+									· planned</span
+								>{/if}{#if zoneChip(s)}<span
+									class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
+									>{zoneChip(s)}</span
+								>{/if}
+						</span>
+						<span class="block truncate text-xs opacity-70">{time(s.start)}</span>
+					</button>
+				{:else}
+					{@const end = s.projectedEnd ?? s.start}
+					{@const h = Math.max(pos(end) - top, 22)}
+					<button
+						type="button"
+						onclick={() => openSleep(s)}
+						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 text-left transition active:scale-[0.99] {statusStyle[
+							s.status
+						]}"
+						style="top: {top}px; height: {h}px"
+					>
+						<span class="block truncate text-sm font-medium">
+							{typeLabel(s.type, i)}
+							{#if s.tooShort}<span class="text-amber-600 dark:text-amber-400">
+									· short</span
+								>{/if}{#if zoneChip(s)}<span
+									class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
+									>{zoneChip(s)}</span
+								>{/if}
+						</span>
+						<span class="block truncate text-xs opacity-70">
+							{time(s.start)}–{time(end)}
+							{#if s.durationMin != null}· {fmtDuration(
+									s.durationMin
+								)}{:else if s.status === 'projected'}· ~{fmtDuration(
+									Math.round((end - s.start) / 60_000)
+								)}{/if}
+						</span>
+					</button>
+				{/if}
+			{/if}
+		{/each}
+
+		<!-- Editable projected tail (today only): reshape the future naps / windows /
+		     bedtime with Plan-editor gestures. Drag a nap to move it, its grips to
+		     resize, the bedtime cap to move it; a quick tap still logs the sleep. -->
+		{#if editable}
+			{#each tail.blocks as b (b.kind + b.idx)}
+				{@const top = pos(b.start)}
+				{@const h = Math.max(pos(b.end) - top, 22)}
+				{#if b.kind === 'nap'}
+					{@const moving = movingSpec?.type === 'nap-move' && movingSpec.index === b.idx}
+					<button
+						type="button"
+						use:movable={{ spec: { type: 'nap-move', index: b.idx } }}
+						onclick={() => {
+							if (!suppressClick) openTailNap(b);
+						}}
+						class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-center overflow-hidden rounded-lg border border-dashed border-indigo-400/60 bg-indigo-400/[0.12] px-3 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {moving
+							? 'z-10 cursor-grabbing ring-2 ring-indigo-500'
+							: ''}"
+						style="top: {top}px; height: {h}px"
+					>
+						<span class="truncate text-sm font-medium">
+							Nap {b.idx + 1}<span class="font-normal opacity-60"> · planned</span>
+						</span>
+						<span class="truncate text-xs opacity-60">
+							{time(b.start)}–{time(b.end)} · {fmtDuration(b.min)}
+						</span>
+					</button>
+					{#if f.napCount > loggedNaps}
+						<button
+							type="button"
+							aria-label="Remove nap {b.idx + 1}"
+							onclick={() => removeNap(b.idx)}
+							class="absolute right-1 z-30 flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold text-rose-600 opacity-60 hover:opacity-100 dark:text-rose-400"
+							style="top: {top + 2}px">✕</button
+						>
+					{/if}
+					<button
+						type="button"
+						tabindex="-1"
+						aria-label="Resize nap {b.idx + 1} start"
+						onpointerdown={(e) => beginResize(e, b.idx, 'top')}
+						onpointermove={moveResize}
+						onpointerup={endResize}
+						class="absolute right-0 left-14 z-20 flex touch-none cursor-ns-resize items-center justify-center"
+						style="top: {top - 7}px; height: 14px"
+					>
+						<span
+							class="h-1 w-8 rounded-full {resizing?.idx === b.idx && resizing.edge === 'top'
+								? 'bg-indigo-500'
+								: 'bg-black/25 dark:bg-white/30'}"
+						></span>
+					</button>
+					<button
+						type="button"
+						tabindex="-1"
+						aria-label="Resize nap {b.idx + 1} duration"
+						onpointerdown={(e) => beginResize(e, b.idx, 'bottom')}
+						onpointermove={moveResize}
+						onpointerup={endResize}
+						class="absolute right-0 left-14 z-20 flex touch-none cursor-ns-resize items-center justify-center"
+						style="top: {pos(b.end) - 7}px; height: 14px"
+					>
+						<span
+							class="h-1 w-8 rounded-full {resizing?.idx === b.idx && resizing.edge === 'bottom'
+								? 'bg-indigo-500'
+								: 'bg-black/25 dark:bg-white/30'}"
+						></span>
+					</button>
+				{:else}
+					<div
+						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-dashed border-black/15 bg-black/[0.02] px-3 dark:border-white/15 dark:bg-white/[0.02]"
+						style="top: {top}px; height: {h}px"
+					>
+						<p class="truncate text-sm font-medium opacity-70">Awake</p>
+						<p class="truncate text-xs opacity-60">
+							{time(b.start)}–{time(b.end)} · {fmtDuration(b.min)}
+						</p>
+					</div>
+				{/if}
+			{/each}
+
+			{@const bedTop = pos(tail.bedStart)}
+			<button
+				type="button"
+				use:movable={{ spec: { type: 'bedtime' } }}
+				onclick={() => {
+					if (!suppressClick) openTailBed();
+				}}
+				class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {movingSpec?.type ===
+				'bedtime'
+					? 'ring-2 ring-indigo-500'
+					: ''}"
+				style="top: {bedTop}px; height: {Math.max(pos(bounds.end) - bedTop, 22)}px"
+			>
+				<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+					🌙 Bedtime {time(tail.bedStart)}<span class="font-normal opacity-60"> · planned</span>
+				</span>
+			</button>
+		{/if}
 
 		<!-- Now line -->
 		{#if nowInRange}
@@ -290,6 +727,37 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if editable}
+		<div class="flex items-center justify-between gap-2 text-xs">
+			<button
+				type="button"
+				onclick={addNap}
+				class="rounded-full border border-indigo-400/50 px-3 py-1 font-medium text-indigo-600 active:scale-95 dark:text-indigo-400"
+			>
+				+ Add nap
+			</button>
+			<span class="opacity-50">Drag naps &amp; bedtime to reshape today</span>
+		</div>
+
+		<!-- Auto-save: persist the reshaped tail to today's overlay (debounced). -->
+		<form
+			bind:this={saveFormEl}
+			method="POST"
+			action="?/saveOverlay"
+			class="hidden"
+			use:enhance={() =>
+				async ({ update }) => {
+					await update({ reset: false });
+				}}
+		>
+			<input type="hidden" name="name" value={data.plan.name} />
+			<input type="hidden" name="referenceWakeTime" value={data.plan.referenceWakeTime} />
+			<input type="hidden" name="napCount" value={f.napCount} />
+			<input type="hidden" name="wakeWindows" value={f.wins.join(',')} />
+			<input type="hidden" name="expectedNapDurations" value={f.naps.join(',')} />
+		</form>
+	{/if}
 
 	<p class="pt-1 text-center text-xs opacity-40">{data.templateName}</p>
 </section>

@@ -65,6 +65,10 @@ export interface SettingsDump {
 	updatedAt: number;
 }
 
+// Note: the per-day plan overlay (`day_override`) is intentionally excluded from
+// backups. It's ephemeral, scoped to a single local date and auto-expires, so
+// carrying it across an export/import (potentially to another day or device) would
+// wrongly resurrect a stale one-day adjustment.
 export interface BackupDump {
 	version: typeof BACKUP_VERSION;
 	exportedAt: number;

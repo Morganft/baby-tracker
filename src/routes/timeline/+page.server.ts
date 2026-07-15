@@ -16,15 +16,23 @@ import {
 } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
 import { getActiveTemplate } from '$lib/server/queries/templates';
+import {
+	getDayOverride,
+	upsertDayOverride,
+	clearDayOverride
+} from '$lib/server/queries/dayOverride';
+import { localDateKey } from '$lib/server/queries/day';
 import { buildProjection } from '$lib/server/queries/projection';
 import {
 	parseSleepCreate,
 	parseSleepUpdate,
+	parseTemplate,
 	resolveDisplayZone,
-	resolveEntryTimezone
+	resolveEntryTimezone,
+	type TemplateInput
 } from '$lib/server/api/validate';
 import { resolveClockTime, resolveLocalDateTime } from '$lib/projection/time';
-import { fail, isHttpError } from '@sveltejs/kit';
+import { fail, isHttpError, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 const DAY_MS = 86_400_000;
@@ -51,7 +59,11 @@ export const load: PageServerLoad = ({ cookies }) => {
 	const settings = getSettings();
 	const timeZone = resolveDisplayZone(cookies.get('tz'));
 	const template = getActiveTemplate();
+	const override = getDayOverride(localDateKey(now, timeZone));
 	const projection = buildProjection(now, timeZone);
+	// Whether today's forecast is running off a per-day overlay (vs. the saved plan),
+	// so the view can flag it and offer a reset. `buildProjection` already applied it.
+	const overrideActive = override != null;
 	// The entry the overnight block stands for (last night's sleep), so tapping it
 	// edits that sleep instead of logging a duplicate. From the same grouping the
 	// projection uses, so the two never disagree about which entry that is.
@@ -75,6 +87,10 @@ export const load: PageServerLoad = ({ cookies }) => {
 		entries,
 		overnightEntryId,
 		overnightDraft: overnightDraftFor(template.targetBedtime, projection.anchor, timeZone),
+		overrideActive,
+		// The effective plan the inline tail editor seeds from: today's overlay if one
+		// exists, else the saved active plan. Raw arrays (napCount/wakeWindows/naps).
+		plan: override ?? template,
 		projection
 	};
 };
@@ -86,6 +102,44 @@ function failFromValidation(e: unknown) {
 }
 
 const s = (v: FormDataEntryValue | null) => (typeof v === 'string' ? v : '');
+
+/** Parse comma-separated minutes into a number[] (empty entries dropped). */
+function csv(v: FormDataEntryValue | null): number[] {
+	return s(v)
+		.split(',')
+		.map((t) => t.trim())
+		.filter((t) => t.length > 0)
+		.map(Number);
+}
+
+/** Today's local date key, from the same tz cookie the projection uses. */
+function todayKey(cookies: { get(name: string): string | undefined }): string {
+	return localDateKey(Date.now(), resolveDisplayZone(cookies.get('tz')));
+}
+
+/**
+ * Build + validate the per-day overlay from the inline editor form. `targetBedtime`
+ * is always null: hand-shaping today drops the fixed-bedtime redistribution so the
+ * projection runs the legacy cascade and every edit sticks (bedtime floats).
+ */
+function overlayFromForm(b: FormData): TemplateInput {
+	return parseTemplate({
+		name: s(b.get('name')) || 'Today',
+		referenceWakeTime: s(b.get('referenceWakeTime')),
+		napCount: Number(s(b.get('napCount'))),
+		wakeWindows: csv(b.get('wakeWindows')),
+		expectedNapDurations: csv(b.get('expectedNapDurations')),
+		dailyTotalSleepTarget: null,
+		daytimeCap: null,
+		bedtimeStart: null,
+		bedtimeEnd: null,
+		targetBedtime: null,
+		wakeWindowMin: null,
+		wakeWindowMax: null,
+		napDurationMin: null,
+		napDurationMax: null
+	});
+}
 
 /**
  * Resolve the start/end wall-clock inputs against their submitted zones. A blank
@@ -162,5 +216,24 @@ export const actions: Actions = {
 		const id = s((await request.formData()).get('id'));
 		if (!id || !deleteSleep(id)) return fail(404, { message: 'Entry not found' });
 		return { ok: true };
+	},
+
+	/** Persist the inline-reshaped projected tail as today's per-day overlay. */
+	saveOverlay: async ({ request, cookies }) => {
+		try {
+			upsertDayOverride(todayKey(cookies), overlayFromForm(await request.formData()));
+		} catch (e) {
+			return failFromValidation(e);
+		}
+		return { ok: true };
+	},
+
+	/**
+	 * Clear today's overlay so the forecast reverts to the saved plan. Redirect
+	 * (rather than re-render) so the client doesn't re-seed and auto-save it back.
+	 */
+	resetOverlay: async ({ cookies }) => {
+		clearDayOverride(todayKey(cookies));
+		throw redirect(303, '/timeline');
 	}
 };

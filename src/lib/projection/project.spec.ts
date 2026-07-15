@@ -120,6 +120,44 @@ describe('project — short-nap rule', () => {
 	});
 });
 
+describe('project — overlay reshapes today (per-day plan override)', () => {
+	// A per-day overlay is just a different TemplateConfig fed to the engine for one
+	// day; the engine has no special path for it. It flexes windows/naps normally.
+	it('follows an overlay with an extra nap and a stretched window', () => {
+		const overlay: TemplateConfig = {
+			referenceWakeTime: '07:00',
+			napCount: 3, // base plan has 2 naps; today adds one
+			wakeWindows: [120, 150, 150, 210],
+			expectedNapDurations: [90, 60, 45]
+		};
+		const p = project(build({ template: overlay, now: at('06:30') }));
+		expect(p.sleeps).toHaveLength(4); // 3 naps + bedtime
+		expect(p.sleeps[2].type).toBe('nap');
+		expect(p.sleeps[3].type).toBe('night');
+	});
+
+	// Guards the reason the editor clamps removeNap in today mode: the legacy cascade
+	// only surfaces napCount + 1 slots, so an overlay that drops napCount below the
+	// naps already logged today would omit a nap that actually happened.
+	it('drops a logged nap beyond the overlay napCount (why the editor clamps)', () => {
+		const reduced: TemplateConfig = {
+			referenceWakeTime: '07:00',
+			napCount: 1, // overlay cut to a single nap…
+			wakeWindows: [120, 240],
+			expectedNapDurations: [90]
+		};
+		const sleeps = [nap('a', '09:00', '10:00'), nap('b', '12:00', '13:00')]; // …but two logged
+		const p = project(
+			build({ template: reduced, morningWake: at('07:00'), now: at('13:30'), sleeps })
+		);
+
+		expect(p.sleeps).toHaveLength(2); // only nap 0 + bedtime
+		const ids = p.sleeps.map((s) => s.entryId).filter(Boolean);
+		expect(ids).toEqual(['a']); // nap 'b' is not surfaced
+		expect(p.budget.napsCompleted).toBe(1); // and it's missing from the budget
+	});
+});
+
 describe('project — in-progress sleep', () => {
 	it('reports asleep state and cascades from the estimated wake', () => {
 		const sleeps = [nap('n1', '09:00', null)];

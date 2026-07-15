@@ -26,7 +26,8 @@ export interface ActiveTemplateDTO extends TemplateDTO {
 type TemplateRow = typeof template.$inferSelect;
 type ActiveRow = typeof activeTemplate.$inferSelect;
 
-function toTemplateDTO(row: TemplateRow): TemplateDTO {
+/** Map a template-shaped row (library, active, or day-override) to a DTO. */
+export function toTemplateDTO(row: TemplateRow): TemplateDTO {
 	return {
 		id: row.id,
 		name: row.name,
@@ -56,7 +57,7 @@ function toActiveDTO(row: ActiveRow): ActiveTemplateDTO {
 }
 
 /** The template columns, from a validated body — shared by every write path. */
-function columns(input: TemplateInput) {
+export function columns(input: TemplateInput) {
 	return {
 		name: input.name,
 		referenceWakeTime: input.referenceWakeTime,

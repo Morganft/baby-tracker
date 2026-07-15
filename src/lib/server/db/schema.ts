@@ -77,6 +77,20 @@ export const activeTemplate = sqliteTable('active_template', {
 });
 
 /**
+ * A per-day overlay of the plan (REQUIREMENTS §5.3.6): a full template-shaped
+ * snapshot scoped to one local calendar day. When a row exists for "today" the
+ * projection uses it in place of the active slot, so the caregiver can reshape
+ * just today (drop/add a nap, stretch a window or nap) without touching their
+ * saved plan. Keyed by the local date it applies to; stale rows are pruned, so
+ * the overlay auto-expires and the next day reverts to the active plan.
+ */
+export const dayOverride = sqliteTable('day_override', {
+	date: text('date').primaryKey(), // 'YYYY-MM-DD' local (see localDateKey)
+	...templateColumns,
+	...timestamps
+});
+
+/**
  * A single sleep. Times are absolute (epoch-ms); the IANA zone is captured at
  * both ends so travel/DST render correctly — a sleep can start in one zone and
  * end in another (e.g. an overnight flight). The start zone lives in the
@@ -130,6 +144,7 @@ export const settings = sqliteTable('settings', {
 export type Baby = typeof baby.$inferSelect;
 export type Template = typeof template.$inferSelect;
 export type ActiveTemplate = typeof activeTemplate.$inferSelect;
+export type DayOverride = typeof dayOverride.$inferSelect;
 export type SleepEntry = typeof sleepEntry.$inferSelect;
 export type NightWaking = typeof nightWaking.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
