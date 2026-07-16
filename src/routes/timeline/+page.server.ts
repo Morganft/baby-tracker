@@ -12,6 +12,7 @@ import {
 	listSleeps,
 	listEntryZones,
 	assembleDay,
+	assembleDayForKey,
 	type SleepDTO
 } from '$lib/server/queries/sleeps';
 import { getSettings } from '$lib/server/queries/settings';
@@ -21,8 +22,10 @@ import {
 	upsertDayOverride,
 	clearDayOverride
 } from '$lib/server/queries/dayOverride';
-import { localDateKey } from '$lib/server/queries/day';
+import { localDateKey, type DayGrouping } from '$lib/server/queries/day';
 import { buildProjection } from '$lib/server/queries/projection';
+import { resolveViewedDay } from '$lib/server/queries/viewedDay';
+import type { Projection, ProjectedSleep } from '$lib/projection/types';
 import {
 	parseSleepCreate,
 	parseSleepUpdate,
@@ -54,43 +57,137 @@ function overnightDraftFor(
 	return { start, end: anchor };
 }
 
-export const load: PageServerLoad = ({ cookies }) => {
+/**
+ * A completed-only projection for a past day: its actual logged sleeps rendered as
+ * `completed` blocks, with no projected tail, now-line, or current state. Wake
+ * windows are the real awake gaps between the anchor and each sleep. The `budget`
+ * fields are zeroed because the timeline view never reads them (only `anchor`,
+ * `anchorIsActual`, and `sleeps`).
+ */
+function completedProjection(
+	grouping: DayGrouping,
+	shortNapThresholdMin: number,
+	dayStart: number
+): Projection {
+	const { sleeps, morningWake } = grouping;
+	// Visual top anchor: the actual morning wake once one exists, else the day's first
+	// sleep start (avoids a phantom overnight-awake gap); `dayStart` (local midnight)
+	// is the last resort for a reachable but empty in-between day.
+	const anchor = morningWake ?? sleeps[0]?.start ?? dayStart;
+
+	// Advance a cursor through each sleep's end (or start, if in progress) so each
+	// block's leading wake window is the true awake gap since the previous one.
+	let cursor = anchor;
+	const projected: ProjectedSleep[] = sleeps.map((sp, index) => {
+		const durationMin = sp.end != null ? Math.round((sp.end - sp.start) / 60_000) : null;
+		const wakeWindowBeforeMin = Math.max(0, Math.round((sp.start - cursor) / 60_000));
+		cursor = sp.end ?? sp.start;
+		return {
+			index,
+			type: sp.type,
+			status: 'completed',
+			start: sp.start,
+			end: sp.end,
+			projectedEnd: sp.end,
+			durationMin,
+			wakeWindowBeforeMin,
+			wakeWindowReduced: false,
+			tooShort: sp.type === 'nap' && durationMin != null && durationMin <= shortNapThresholdMin,
+			entryId: sp.id
+		};
+	});
+
+	return {
+		anchor,
+		anchorIsActual: morningWake != null,
+		sleeps: projected,
+		nextSleep: null,
+		currentState: { asleep: false, since: anchor, elapsedMin: 0 },
+		budget: {
+			daytimeUsedMin: 0,
+			daytimeCapMin: null,
+			totalTargetMin: null,
+			napsCompleted: 0,
+			wakeUsedMin: 0,
+			wakeBudgetMin: 0
+		}
+	};
+}
+
+export const load: PageServerLoad = ({ cookies, url }) => {
 	const now = Date.now();
 	const settings = getSettings();
 	const timeZone = resolveDisplayZone(cookies.get('tz'));
 	const template = getActiveTemplate();
-	const override = getDayOverride(localDateKey(now, timeZone));
-	const projection = buildProjection(now, timeZone);
-	// Whether today's forecast is running off a per-day overlay (vs. the saved plan),
-	// so the view can flag it and offer a reset. `buildProjection` already applied it.
-	const overrideActive = override != null;
-	// The entry the overnight block stands for (last night's sleep), so tapping it
-	// edits that sleep instead of logging a duplicate. From the same grouping the
-	// projection uses, so the two never disagree about which entry that is.
-	const { overnightEntryId } = assembleDay(now, timeZone);
+	const view = resolveViewedDay(url.searchParams.get('date'), timeZone);
 
-	// The logged entries the timeline shows, keyed by id, so tapping a block can
-	// prefill the edit popup with its full details (location/put-down/notes) — which
-	// the pure projection's `ProjectedSleep` deliberately doesn't carry.
-	const shownIds = new Set(projection.sleeps.map((s) => s.entryId).filter(Boolean));
-	if (overnightEntryId) shownIds.add(overnightEntryId);
-	const entries: Record<string, SleepDTO> = {};
-	for (const e of listSleeps()) if (shownIds.has(e.id)) entries[e.id] = e;
-
-	return {
+	// Fields common to both paths: the day-nav header + the display context. Kept a
+	// stable shape so the view's `data.*` reads never diverge between today and a
+	// past day.
+	const base = {
+		...view,
 		now,
 		timeZone,
 		clock24h: settings.clock24h,
 		templateName: template.name,
 		// id → captured zones, to flag a logged block whose zone differs from today's.
-		entryZones: listEntryZones(),
+		entryZones: listEntryZones()
+	};
+
+	if (view.isToday) {
+		const override = getDayOverride(view.viewedDayKey);
+		const projection = buildProjection(now, timeZone);
+		// Whether today's forecast is running off a per-day overlay (vs. the saved plan),
+		// so the view can flag it and offer a reset. `buildProjection` already applied it.
+		const overrideActive = override != null;
+		// The entry the overnight block stands for (last night's sleep), so tapping it
+		// edits that sleep instead of logging a duplicate. From the same grouping the
+		// projection uses, so the two never disagree about which entry that is.
+		const { overnightEntryId } = assembleDay(now, timeZone);
+
+		// The logged entries the timeline shows, keyed by id, so tapping a block can
+		// prefill the edit popup with its full details (location/put-down/notes) — which
+		// the pure projection's `ProjectedSleep` deliberately doesn't carry.
+		const shownIds = new Set(projection.sleeps.map((s) => s.entryId).filter(Boolean));
+		if (overnightEntryId) shownIds.add(overnightEntryId);
+		const entries: Record<string, SleepDTO> = {};
+		for (const e of listSleeps()) if (shownIds.has(e.id)) entries[e.id] = e;
+
+		return {
+			...base,
+			entries,
+			overnightEntryId,
+			overnightDraft: overnightDraftFor(template.targetBedtime, projection.anchor, timeZone),
+			overrideActive,
+			// The effective plan the inline tail editor seeds from: today's overlay if one
+			// exists, else the saved active plan. Raw arrays (napCount/wakeWindows/naps).
+			plan: override ?? template,
+			projection
+		};
+	}
+
+	// Past day: only that day's actual logged sleeps, as completed blocks. No
+	// projected tail, now-line, inline editor, or overlay — those are live-only.
+	const grouping = assembleDayForKey(view.viewedDayKey, timeZone);
+	// Local midnight of the viewed day — the anchor fallback for a day with no logged
+	// sleeps and no morning wake (keeps the layout off epoch 0).
+	const dayStart = resolveLocalDateTime(`${view.viewedDayKey}T00:00`, timeZone);
+	const projection = completedProjection(grouping, settings.shortNapThresholdMin, dayStart);
+
+	const shownIds = new Set<string>(grouping.sleeps.map((s) => s.id));
+	if (grouping.overnightEntryId) shownIds.add(grouping.overnightEntryId);
+	const entries: Record<string, SleepDTO> = {};
+	for (const e of listSleeps()) if (shownIds.has(e.id)) entries[e.id] = e;
+
+	return {
+		...base,
 		entries,
-		overnightEntryId,
-		overnightDraft: overnightDraftFor(template.targetBedtime, projection.anchor, timeZone),
-		overrideActive,
-		// The effective plan the inline tail editor seeds from: today's overlay if one
-		// exists, else the saved active plan. Raw arrays (napCount/wakeWindows/naps).
-		plan: override ?? template,
+		// Pass the prior night's entry so the overnight block, if rendered, edits it.
+		overnightEntryId: grouping.overnightEntryId,
+		// Past days have no inline plan/tail editor or overlay to seed or flag.
+		overnightDraft: null,
+		overrideActive: false,
+		plan: null,
 		projection
 	};
 };

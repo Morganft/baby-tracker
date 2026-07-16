@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import DayNav from '$lib/components/DayNav.svelte';
 	import { fmtTime, fmtDuration, fmtZoneAbbrev, toTimeInput } from '$lib/format';
 	import { editInit, createInit, createFrom, type SleepFormInit } from '$lib/timeline/sleepForm';
 	import {
@@ -41,7 +42,8 @@
 	/** The overnight block: edit last night's sleep if there is one, else log it. */
 	function openOvernight() {
 		const e = data.overnightEntryId ? data.entries[data.overnightEntryId] : undefined;
-		popup = e ? editInit(e) : createFrom({ ...data.overnightDraft, type: 'night' }, tz);
+		if (e) popup = editInit(e);
+		else if (data.overnightDraft) popup = createFrom({ ...data.overnightDraft, type: 'night' }, tz);
 	}
 	const close = () => (popup = null);
 
@@ -113,10 +115,14 @@
 	const bounds = $derived.by(() => {
 		const ends = sleeps.map((s) => s.projectedEnd ?? s.start);
 		const starts = sleeps.map((s) => s.start);
-		const start = Math.min(data.projection.anchor, nowMs, ...starts) - PAD_MS;
+		// Live-only extents: past days span just their own logged sleeps (no `now`
+		// line and no editable tail bedtime to grow toward).
+		const liveMin = data.isToday ? [nowMs] : [];
 		// Include the client-side edited tail's bedtime so the container grows as you
 		// drag bedtime later (the server projection only catches up after a save).
-		const end = Math.max(data.projection.anchor, nowMs, tail.bedStart, ...ends) + PAD_MS;
+		const liveMax = data.isToday ? [nowMs, tail.bedStart] : [];
+		const start = Math.min(data.projection.anchor, ...liveMin, ...starts) - PAD_MS;
+		const end = Math.max(data.projection.anchor, ...liveMax, ...ends) + PAD_MS;
 		// Guard against a zero span (no sleeps yet) so the scale stays finite.
 		return { start, end: end > start ? end : start + 3_600_000 };
 	});
@@ -180,6 +186,9 @@
 	// The editable template's tail as plain arrays (minutes). Seeded once, re-seeded
 	// whenever the server sends a new plan (a save echo or a reset).
 	function seedTail() {
+		// Past days carry no plan (no inline editor); return an empty tail so the
+		// derives below stay null-safe. The editable UI is gated off anyway.
+		if (!data.plan) return { napCount: 0, wins: [] as number[], naps: [] as number[] };
 		const wins = data.plan.wakeWindows.slice();
 		const naps = data.plan.expectedNapDurations.slice();
 		const napCount = data.plan.napCount;
@@ -446,9 +455,20 @@
 </script>
 
 <section class="space-y-4">
+	<DayNav
+		basePath="/timeline"
+		dayKey={data.viewedDayKey}
+		isToday={data.isToday}
+		prevKey={data.prevKey}
+		nextKey={data.nextKey}
+		todayKey={data.todayKey}
+		minKey={data.minKey}
+		label={data.label}
+	/>
+
 	<div class="flex items-center justify-between gap-2">
 		<div class="flex items-center gap-2">
-			<h2 class="text-xl font-semibold">Today</h2>
+			<h2 class="text-xl font-semibold">{data.isToday ? 'Today' : data.label}</h2>
 			{#if data.overrideActive}
 				<span
 					class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
@@ -512,22 +532,27 @@
 		<!-- Overnight sleep: the tail of last night's sleep the day woke from,
 		     rendered into the top pad, ending at the anchor (morning wake). Actual
 		     once a morning wake is logged; planned (dashed) before the first log,
-		     when the wake time is only the template's reference. -->
-		<button
-			type="button"
-			onclick={openOvernight}
-			class="absolute right-0 left-14 flex flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 px-3 pb-1.5 text-left transition active:scale-[0.99] {anchorIsActual
-				? 'border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/25'
-				: 'border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-400/[0.02] to-indigo-400/[0.08]'}"
-			style="top: {overnight.top}px; height: {overnight.height}px"
-		>
-			<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
-				🌙 Overnight{#if !anchorIsActual}<span class="font-normal opacity-60"> · planned</span>{/if}
-			</span>
-			<span class="block truncate text-xs opacity-70">
-				{#if anchorIsActual}woke {time(overnight.wake)}{:else}waking ~{time(overnight.wake)}{/if}
-			</span>
-		</button>
+		     when the wake time is only the template's reference. On a past day it's
+		     shown only when an actual overnight entry exists (never planned). -->
+		{#if data.isToday || data.overnightEntryId}
+			<button
+				type="button"
+				onclick={openOvernight}
+				class="absolute right-0 left-14 flex flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 px-3 pb-1.5 text-left transition active:scale-[0.99] {anchorIsActual
+					? 'border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/25'
+					: 'border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-400/[0.02] to-indigo-400/[0.08]'}"
+				style="top: {overnight.top}px; height: {overnight.height}px"
+			>
+				<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+					🌙 Overnight{#if !anchorIsActual}<span class="font-normal opacity-60">
+							· planned</span
+						>{/if}
+				</span>
+				<span class="block truncate text-xs opacity-70">
+					{#if anchorIsActual}woke {time(overnight.wake)}{:else}waking ~{time(overnight.wake)}{/if}
+				</span>
+			</button>
+		{/if}
 
 		<!-- Wake-window blocks: the awake gaps between sleeps, spanning cursor→start.
 		     When the tail is editable, its projected windows are drawn by the tail
@@ -717,8 +742,8 @@
 			</button>
 		{/if}
 
-		<!-- Now line -->
-		{#if nowInRange}
+		<!-- Now line (today only) -->
+		{#if data.isToday && nowInRange}
 			<div class="absolute inset-x-0 z-10 flex items-center" style="top: {pos(nowMs)}px">
 				<span class="w-12 shrink-0 text-right text-[0.6875rem] font-semibold text-rose-500"
 					>{time(nowMs)}</span
@@ -751,8 +776,8 @@
 					await update({ reset: false });
 				}}
 		>
-			<input type="hidden" name="name" value={data.plan.name} />
-			<input type="hidden" name="referenceWakeTime" value={data.plan.referenceWakeTime} />
+			<input type="hidden" name="name" value={data.plan?.name ?? ''} />
+			<input type="hidden" name="referenceWakeTime" value={data.plan?.referenceWakeTime ?? ''} />
 			<input type="hidden" name="napCount" value={f.napCount} />
 			<input type="hidden" name="wakeWindows" value={f.wins.join(',')} />
 			<input type="hidden" name="expectedNapDurations" value={f.naps.join(',')} />

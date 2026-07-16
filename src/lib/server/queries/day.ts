@@ -30,7 +30,7 @@ export function localDateKey(epoch: number, timeZone: string): string {
 }
 
 /** Shift a 'YYYY-MM-DD' key by whole calendar days (pure date math, no tz). */
-function shiftDateKey(key: string, days: number): string {
+export function shiftDateKey(key: string, days: number): string {
 	const [y, m, d] = key.split('-').map(Number);
 	const dt = new Date(Date.UTC(y, m - 1, d + days));
 	const pad = (n: number) => String(n).padStart(2, '0');
@@ -52,17 +52,17 @@ export interface DayGrouping {
 }
 
 /**
- * Partition all stored entries into today's projection inputs. `now`/`timeZone`
- * define which calendar day is "today". A night sleep started today is tonight's
- * bedtime and stays in `sleeps`; a night sleep started *yesterday* supplies this
- * morning's wake via its `end` (its post-midnight wakings stay with yesterday).
+ * Partition all stored entries into one day's projection inputs. `dayKey` (a
+ * 'YYYY-MM-DD' local calendar day) defines which day the grouping is for. A night
+ * sleep started that day is that evening's bedtime and stays in `sleeps`; a night
+ * sleep started the day *before* supplies that morning's wake via its `end` (its
+ * post-midnight wakings stay with the prior day).
  */
-export function groupDay(entries: DayEntry[], now: number, timeZone: string): DayGrouping {
-	const todayKey = localDateKey(now, timeZone);
-	const yesterdayKey = shiftDateKey(todayKey, -1);
+export function groupDayForKey(entries: DayEntry[], dayKey: string, timeZone: string): DayGrouping {
+	const yesterdayKey = shiftDateKey(dayKey, -1);
 
 	const sleeps: LoggedSleep[] = entries
-		.filter((e) => localDateKey(e.start, timeZone) === todayKey)
+		.filter((e) => localDateKey(e.start, timeZone) === dayKey)
 		.sort((a, b) => a.start - b.start)
 		.map((e) => ({ id: e.id, type: e.type, start: e.start, end: e.end }));
 
@@ -83,5 +83,53 @@ export function groupDay(entries: DayEntry[], now: number, timeZone: string): Da
 		sleeps,
 		morningWake: lastNight ? lastNight.end : null,
 		overnightEntryId: overnight ? overnight.id : null
+	};
+}
+
+/**
+ * Group today's projection inputs. `now`/`timeZone` resolve which calendar day is
+ * "today"; the work is delegated to `groupDayForKey`. See it for the day/night rule.
+ */
+export function groupDay(entries: DayEntry[], now: number, timeZone: string): DayGrouping {
+	return groupDayForKey(entries, localDateKey(now, timeZone), timeZone);
+}
+
+/** A read-only, at-a-glance summary of one grouped day. Times are epoch-ms. */
+export interface DaySummary {
+	/** Sum of completed nap durations that day, whole minutes. */
+	daytimeSleepMin: number;
+	/** Count of completed naps that day. */
+	napCount: number;
+	/** Actual morning wake (end of the prior night's sleep), or null. */
+	morningWake: number | null;
+	/** Start of that day's night sleep (bedtime), or null if not logged. */
+	bedtime: number | null;
+	/** Awake time between wake and bedtime minus daytime sleep; null if either bound is missing. */
+	awakeMin: number | null;
+}
+
+/**
+ * Derive a `DaySummary` from a grouping. Pure (no DB) so it can be unit-tested;
+ * `getDaySummary` (in `./sleeps`) wraps it around a DB read. In-progress naps
+ * (no `end`) are excluded from the daytime-sleep total and nap count.
+ */
+export function summariseGrouping(g: DayGrouping): DaySummary {
+	const completedNaps = g.sleeps.filter((s) => s.type === 'nap' && s.end != null);
+	const daytimeSleepMin = Math.round(
+		completedNaps.reduce((sum, s) => sum + ((s.end as number) - s.start), 0) / 60000
+	);
+	const bedtime = g.sleeps.find((s) => s.type === 'night')?.start ?? null;
+	const morningWake = g.morningWake;
+	const awakeMin =
+		morningWake != null && bedtime != null
+			? Math.round((bedtime - morningWake) / 60000) - daytimeSleepMin
+			: null;
+
+	return {
+		daytimeSleepMin,
+		napCount: completedNaps.length,
+		morningWake,
+		bedtime,
+		awakeMin
 	};
 }

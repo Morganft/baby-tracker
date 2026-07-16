@@ -7,7 +7,15 @@
 import { db } from '../db/index';
 import { sleepEntry, nightWaking } from '../db/schema';
 import { eq, inArray, desc, isNull } from 'drizzle-orm';
-import { groupDay, type DayEntry, type DayGrouping } from './day';
+import {
+	groupDay,
+	groupDayForKey,
+	summariseGrouping,
+	localDateKey,
+	type DayEntry,
+	type DayGrouping,
+	type DaySummary
+} from './day';
 import type { SleepCreate, SleepUpdate } from '../api/validate';
 
 /** API representation of a sleep entry. All times are epoch-ms. */
@@ -181,18 +189,52 @@ export function deleteWaking(wakingId: string): boolean {
 	);
 }
 
+/** Read every sleep row as a minimal `DayEntry` for the grouping layer. */
+function readDayEntries(): DayEntry[] {
+	return db
+		.select()
+		.from(sleepEntry)
+		.all()
+		.map((r) => ({
+			id: r.id,
+			type: r.type,
+			start: r.startTime.getTime(),
+			end: r.endTime ? r.endTime.getTime() : null
+		}));
+}
+
 /**
  * Assemble today's projection inputs from the DB: naps started today plus
  * tonight's bedtime, and this morning's actual wake (end of last night's sleep).
  * See `groupDay` for the day/night grouping rule.
  */
 export function assembleDay(now: number, timeZone: string): DayGrouping {
-	const rows = db.select().from(sleepEntry).all();
-	const entries: DayEntry[] = rows.map((r) => ({
-		id: r.id,
-		type: r.type,
-		start: r.startTime.getTime(),
-		end: r.endTime ? r.endTime.getTime() : null
-	}));
-	return groupDay(entries, now, timeZone);
+	return groupDay(readDayEntries(), now, timeZone);
+}
+
+/**
+ * Like `assembleDay` but for an explicit `dayKey` ('YYYY-MM-DD') — used to view a
+ * previous day's actuals. Delegates to `groupDayForKey`.
+ */
+export function assembleDayForKey(dayKey: string, timeZone: string): DayGrouping {
+	return groupDayForKey(readDayEntries(), dayKey, timeZone);
+}
+
+/** Read-only at-a-glance summary of a day's logged sleep. See `summariseGrouping`. */
+export function getDaySummary(dayKey: string, timeZone: string): DaySummary {
+	return summariseGrouping(assembleDayForKey(dayKey, timeZone));
+}
+
+/**
+ * Local calendar-day key of the earliest logged sleep, used to cap back-navigation.
+ * Null when nothing is logged. `listSleeps()` is most-recent-first, so the earliest
+ * is its last element; its key is read in that entry's own captured zone (matching
+ * how History buckets). `timeZone` is accepted for signature consistency but unused.
+ */
+export function earliestDayKey(timeZone: string): string | null {
+	void timeZone;
+	const all = listSleeps();
+	if (all.length === 0) return null;
+	const earliest = all[all.length - 1];
+	return localDateKey(earliest.startTime, earliest.startTimezone);
 }

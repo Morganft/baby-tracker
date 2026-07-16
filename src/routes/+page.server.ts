@@ -9,25 +9,50 @@ import {
 	getActiveSleep,
 	createSleep,
 	updateSleep,
-	listEntryZones
+	listEntryZones,
+	getDaySummary
 } from '$lib/server/queries/sleeps';
 import { buildProjection } from '$lib/server/queries/projection';
+import { resolveViewedDay } from '$lib/server/queries/viewedDay';
 import { resolveDisplayZone, resolveEntryTimezone } from '$lib/server/api/validate';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ cookies }) => {
+export const load: PageServerLoad = ({ cookies, url }) => {
 	const now = Date.now();
 	const settings = getSettings();
 	const timeZone = resolveDisplayZone(cookies.get('tz'));
 	const template = getActiveTemplate();
-	const active = getActiveSleep();
+	// Which calendar day the page renders — today (live path) or a past day (actuals).
+	const view = resolveViewedDay(url.searchParams.get('date'), timeZone);
 
-	return {
+	// Fields common to both paths, so the page's `data` type is a stable shape
+	// rather than a fragile discriminated union.
+	const base = {
+		...view,
 		now,
 		timeZone,
 		clock24h: settings.clock24h,
 		templateName: template.name,
+		// id → captured zones, so the "Since" line can flag a travel entry logged
+		// in a zone other than the one today renders in.
+		entryZones: listEntryZones()
+	};
+
+	if (!view.isToday) {
+		// Past day: no live "right now" — a read-only actuals summary drives the UI.
+		return {
+			...base,
+			asleep: false,
+			activeSleep: null,
+			projection: null,
+			daySummary: getDaySummary(view.viewedDayKey, timeZone)
+		};
+	}
+
+	const active = getActiveSleep();
+	return {
+		...base,
 		asleep: active != null,
 		activeSleep: active
 			? {
@@ -37,10 +62,8 @@ export const load: PageServerLoad = ({ cookies }) => {
 					timezone: active.startTimezone
 				}
 			: null,
-		// id → captured zones, so the "Since" line can flag a travel entry logged
-		// in a zone other than the one today renders in.
-		entryZones: listEntryZones(),
-		projection: buildProjection(now, timeZone)
+		projection: buildProjection(now, timeZone),
+		daySummary: null
 	};
 };
 
