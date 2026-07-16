@@ -12,7 +12,12 @@ services:
       - baby-tracker-data:/data
     environment:
       DATABASE_URL: /data/app.db
-      ORIGIN: http://localhost:3000
+      # This container runs behind Caddy (baby.home → this service). Derive the
+      # public origin from the proxy's forwarded headers instead of pinning a
+      # single ORIGIN, so CSRF checks and redirects use the real hostname/scheme
+      # (adapter-node ignores headers whenever ORIGIN is set, so leave it unset).
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
 
 volumes:
   baby-tracker-data:
