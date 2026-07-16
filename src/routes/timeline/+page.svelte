@@ -513,7 +513,7 @@
 		>
 		<span class="flex items-center gap-1"
 			><span
-				class="inline-block h-3 w-3 rounded-sm border border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]"
+				class="inline-block h-3 w-3 rounded-sm border border-amber-500/40 bg-amber-500/15"
 			></span> awake</span
 		>
 	</div>
@@ -563,17 +563,17 @@
 				{@const h = Math.max(pos(w.end) - top, 22)}
 				<div
 					class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 {w.planned
-						? 'border-dashed border-black/15 bg-black/[0.02] dark:border-white/15 dark:bg-white/[0.02]'
-						: 'border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.05]'}"
+						? 'border-dashed border-amber-500/40 bg-amber-500/[0.08]'
+						: 'border-amber-500/40 bg-amber-500/15'}"
 					style="top: {top}px; height: {h}px"
 				>
-					<p class="truncate text-sm font-medium opacity-70">
-						Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400">
-								· short</span
+					<p class="truncate text-xs font-medium text-amber-700/80 dark:text-amber-400/80">
+						Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400"> · short</span
 							>{/if}
 					</p>
-					<p class="truncate text-xs opacity-60">
-						{time(w.start)}–{time(w.end)} · {fmtDuration(w.min)}
+					<p class="truncate text-sm text-amber-800 dark:text-amber-300">
+						{time(w.start)}–{time(w.end)} ·
+						<span class="text-base font-semibold">{fmtDuration(w.min)}</span>
 					</p>
 				</div>
 			{/if}
@@ -631,11 +631,11 @@
 						</span>
 						<span class="block truncate text-xs opacity-70">
 							{time(s.start)}–{time(end)}
-							{#if s.durationMin != null}· {fmtDuration(
-									s.durationMin
-								)}{:else if s.status === 'projected'}· ~{fmtDuration(
-									Math.round((end - s.start) / 60_000)
-								)}{/if}
+							{#if s.durationMin != null}· <span class="text-sm font-semibold">{fmtDuration(
+										s.durationMin
+									)}</span>{:else if s.status === 'projected'}· <span class="text-sm font-semibold"
+									>~{fmtDuration(Math.round((end - s.start) / 60_000))}</span
+								>{/if}
 						</span>
 					</button>
 				{/if}
@@ -666,7 +666,8 @@
 							Nap {b.idx + 1}<span class="font-normal opacity-60"> · planned</span>
 						</span>
 						<span class="truncate text-xs opacity-60">
-							{time(b.start)}–{time(b.end)} · {fmtDuration(b.min)}
+							{time(b.start)}–{time(b.end)} ·
+							<span class="text-sm font-semibold">{fmtDuration(b.min)}</span>
 						</span>
 					</button>
 					{#if f.napCount > loggedNaps}
@@ -712,12 +713,13 @@
 					</button>
 				{:else}
 					<div
-						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-dashed border-black/15 bg-black/[0.02] px-3 dark:border-white/15 dark:bg-white/[0.02]"
+						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-dashed border-amber-500/40 bg-amber-500/[0.08] px-3"
 						style="top: {top}px; height: {h}px"
 					>
-						<p class="truncate text-sm font-medium opacity-70">Awake</p>
-						<p class="truncate text-xs opacity-60">
-							{time(b.start)}–{time(b.end)} · {fmtDuration(b.min)}
+						<p class="truncate text-xs font-medium text-amber-700/80 dark:text-amber-400/80">Awake</p>
+						<p class="truncate text-sm text-amber-800 dark:text-amber-300">
+							{time(b.start)}–{time(b.end)} ·
+							<span class="text-base font-semibold">{fmtDuration(b.min)}</span>
 						</p>
 					</div>
 				{/if}

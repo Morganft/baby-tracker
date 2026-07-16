@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { resolve } from '$app/paths';
 	import { resolveClockTime } from '$lib/projection/time';
 	import { browserTimeZone, fmtTime as fmtTimeIn, fmtZoneAbbrev } from '$lib/format';
 	import DayNav from '$lib/components/DayNav.svelte';
@@ -36,6 +35,12 @@
 	// The most recent completed sleep — its end is "last wake", editable when awake.
 	const lastCompleted = $derived(
 		[...(data.projection?.sleeps ?? [])].reverse().find((s) => s.status === 'completed') ?? null
+	);
+	// The most recent completed nap, for the at-a-glance "Last nap" tile.
+	const lastNap = $derived(
+		[...(data.projection?.sleeps ?? [])]
+			.reverse()
+			.find((s) => s.type === 'nap' && s.status === 'completed' && s.end != null) ?? null
 	);
 	// Which timestamp the "adjust" control edits: current sleep's start, or last wake.
 	const editable = $derived(
@@ -92,7 +97,7 @@
 	const typeLabel = (t: 'nap' | 'night') => (t === 'night' ? 'bedtime' : 'nap');
 </script>
 
-<section class="space-y-4">
+<section class="space-y-3">
 	<DayNav
 		basePath="/"
 		dayKey={data.viewedDayKey}
@@ -104,19 +109,10 @@
 		label={data.label}
 	/>
 
-	<div class="flex justify-end">
-		<a
-			href={resolve('/add?from=/')}
-			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
-		>
-			+ Add sleep
-		</a>
-	</div>
-
 	{#if data.isToday}
 		<!-- Current state -->
 		<div
-			class="rounded-2xl border p-5 {asleep
+			class="rounded-2xl border p-4 {asleep
 				? 'border-indigo-500/30 bg-indigo-500/[0.08]'
 				: 'border-black/10 bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.04]'}"
 		>
@@ -174,7 +170,7 @@
 
 		<!-- Next sleep -->
 		<div
-			class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+			class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 		>
 			{#if next}
 				<div class="flex items-baseline justify-between">
@@ -196,9 +192,9 @@
 
 		<!-- Budget (reference only) -->
 		{#if budget}
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-2 gap-2">
 				<div
-					class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 				>
 					<p class="text-xs opacity-60">Daytime sleep</p>
 					<p class="mt-1 text-xl font-semibold">
@@ -210,7 +206,7 @@
 					</p>
 				</div>
 				<div
-					class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 				>
 					<p class="text-xs opacity-60">Awake today</p>
 					<p class="mt-1 text-xl font-semibold">
@@ -220,10 +216,23 @@
 					</p>
 				</div>
 				<div
-					class="col-span-2 rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 				>
 					<p class="text-xs opacity-60">Naps done</p>
 					<p class="mt-1 text-xl font-semibold">{budget.napsCompleted}</p>
+				</div>
+				<div
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
+				>
+					<p class="text-xs opacity-60">Last nap</p>
+					{#if lastNap && lastNap.end != null}
+						<p class="mt-1 text-xl font-semibold">
+							{fmtDuration(lastNap.durationMin ?? 0)}
+						</p>
+						<p class="text-xs opacity-50">{fmtTime(lastNap.start)}–{fmtTime(lastNap.end)}</p>
+					{:else}
+						<p class="mt-1 text-xl font-semibold opacity-40">—</p>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -238,7 +247,7 @@
 		>
 			<button
 				type="submit"
-				class="w-full rounded-2xl px-4 py-7 text-lg font-semibold text-white active:scale-[0.99] {asleep
+				class="w-full rounded-2xl px-4 py-4 text-lg font-semibold text-white active:scale-[0.99] {asleep
 					? 'bg-slate-700 dark:bg-slate-600'
 					: 'bg-indigo-600'}"
 			>
@@ -278,13 +287,13 @@
 			<!-- Day totals -->
 			<div class="grid grid-cols-2 gap-3">
 				<div
-					class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 				>
 					<p class="text-xs opacity-60">Daytime sleep</p>
 					<p class="mt-1 text-xl font-semibold">{fmtDuration(summary.daytimeSleepMin)}</p>
 				</div>
 				<div
-					class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+					class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.04]"
 				>
 					<p class="text-xs opacity-60">Awake</p>
 					<p class="mt-1 text-xl font-semibold">
