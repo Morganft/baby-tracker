@@ -28,10 +28,11 @@ export function fmtZoneAbbrev(epoch: number, timeZone: string): string {
 	return p.find((x) => x.type === 'timeZoneName')?.value ?? '';
 }
 
-/** Compact duration, e.g. '1h 05m' or '45m'. */
+/** Compact duration, e.g. '1h 05m' or '45m'. Fractional minutes are rounded. */
 export function fmtDuration(min: number): string {
-	const h = Math.floor(min / 60);
-	const m = min % 60;
+	const total = Math.round(min);
+	const h = Math.floor(total / 60);
+	const m = total % 60;
 	return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
