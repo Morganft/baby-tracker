@@ -56,7 +56,7 @@ Turn the request into a concrete, checkable spec.
   "done" (behaviour + which gates must be green + which requirement clauses are
   satisfied). Phase 4 checks against these.
 - **Follow TDD.** Alongside each acceptance criterion, write the failing test(s)
-  that encode it *before* implementing. Run them to confirm they fail for the
+  that encode it _before_ implementing. Run them to confirm they fail for the
   right reason (red) so you know they actually exercise the new behaviour. These
   tests are the executable form of the acceptance criteria. Follow the repo's
   testing conventions — runner, scripts, fixtures, and what is (and isn't)

@@ -19,12 +19,12 @@ the wrapper.
 
 ## Scripts
 
-| Command                                          | What it does                             |
-| ------------------------------------------------ | ---------------------------------------- |
-| `npm run test`                                   | vitest once (CI mode) — the gate         |
-| `npm run test:unit`                              | vitest in watch mode (local iteration)   |
-| `npm run test -- --run <file>`                   | run a single spec file                   |
-| `npm run test -- --run <file> -t "<name>"`       | run one test/describe by name            |
+| Command                                    | What it does                           |
+| ------------------------------------------ | -------------------------------------- |
+| `npm run test`                             | vitest once (CI mode) — the gate       |
+| `npm run test:unit`                        | vitest in watch mode (local iteration) |
+| `npm run test -- --run <file>`             | run a single spec file                 |
+| `npm run test -- --run <file> -t "<name>"` | run one test/describe by name          |
 
 Each runs inside the `node:22` container via the [gates.md](gates.md) wrapper.
 
@@ -38,7 +38,7 @@ Each runs inside the `node:22` container via the [gates.md](gates.md) wrapper.
   unless the test is specifically about zone handling). Never use `Date.now()` or
   the ambient local zone in a test — see `project.spec.ts`'s `at()` and
   `day.spec.ts`'s `U()` helpers.
-- **No DB in tests.** Server-side specs test *pure* helpers, not `better-sqlite3`.
+- **No DB in tests.** Server-side specs test _pure_ helpers, not `better-sqlite3`.
   Keep DB access thin in `+server.ts`/queries and push testable logic into pure
   functions (as `queries/day.ts`, `api/validate.ts`, `backup/dump.ts` do).
 - Use small typed fixture builders with an `overrides` param instead of repeating
