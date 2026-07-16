@@ -1,23 +1,45 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import * as schema from './schema';
 import { env } from '$env/dynamic/private';
 
-if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+type DB = BetterSQLite3Database<typeof schema>;
 
-const client = new Database(env.DATABASE_URL);
+let _db: DB | undefined;
 
-// WAL improves concurrent reads/writes from multiple devices; enforce FKs.
-client.pragma('journal_mode = WAL');
-client.pragma('foreign_keys = ON');
+function init(): DB {
+	if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
 
-export const db = drizzle(client, { schema });
+	const client = new Database(env.DATABASE_URL);
 
-// Apply migrations on boot so a fresh self-hosted container comes up with an
-// up-to-date schema and no manual step. Idempotent. The `drizzle/` folder is
-// copied into the production image (see Dockerfile).
-if (existsSync('./drizzle')) {
-	migrate(db, { migrationsFolder: './drizzle' });
+	// WAL improves concurrent reads/writes from multiple devices; enforce FKs.
+	client.pragma('journal_mode = WAL');
+	client.pragma('foreign_keys = ON');
+
+	const db = drizzle(client, { schema });
+
+	// Apply migrations on boot so a fresh self-hosted container comes up with an
+	// up-to-date schema and no manual step. Idempotent. The `drizzle/` folder is
+	// copied into the production image (see Dockerfile).
+	if (existsSync('./drizzle')) {
+		migrate(db, { migrationsFolder: './drizzle' });
+	}
+
+	return db;
 }
+
+function getDb(): DB {
+	return (_db ??= init());
+}
+
+// Lazily connect on first use so merely importing this module has no side
+// effects. SvelteKit's build-time `analyse` step imports every server module,
+// and the runtime container is the only place `DATABASE_URL` is guaranteed to
+// be set — connecting eagerly would fail the build.
+export const db = new Proxy({} as DB, {
+	get(_target, prop, receiver) {
+		return Reflect.get(getDb(), prop, receiver);
+	}
+});
