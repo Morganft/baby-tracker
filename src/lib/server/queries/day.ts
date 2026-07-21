@@ -7,7 +7,7 @@
  * `groupDay` and `localDateKey` are pure (no DB) so they can be unit-tested;
  * `assembleDay` (in `./sleeps`) wraps them around a DB read.
  */
-import type { LoggedSleep } from '$lib/projection/types';
+import type { LoggedSleep, ProjectedSleep, Projection } from '$lib/projection/types';
 
 /** The minimal shape `groupDay` needs from a stored sleep. Times are epoch-ms. */
 export interface DayEntry {
@@ -131,5 +131,64 @@ export function summariseGrouping(g: DayGrouping): DaySummary {
 		morningWake,
 		bedtime,
 		awakeMin
+	};
+}
+
+/**
+ * A completed-only projection for a past day: its actual logged sleeps rendered as
+ * `completed` blocks, with no projected tail, now-line, or current state. Wake
+ * windows are the real awake gaps between the anchor and each sleep. The `budget`
+ * fields are zeroed because the timeline view never reads them (only `anchor`,
+ * `anchorIsActual`, and `sleeps`).
+ *
+ * The anchor is the actual morning wake once one exists, else the day's first
+ * *nap* start — a night sleep is **never** the anchor, so a day whose only log is
+ * the bedtime doesn't collapse onto it; it falls back to `fallbackAnchor` (the
+ * morning reference), leaving unallocated space above the bedtime.
+ */
+export function completedProjection(
+	grouping: DayGrouping,
+	shortNapThresholdMin: number,
+	fallbackAnchor: number
+): Projection {
+	const { sleeps, morningWake } = grouping;
+	const anchor = morningWake ?? sleeps.find((s) => s.type === 'nap')?.start ?? fallbackAnchor;
+
+	// Advance a cursor through each sleep's end (or start, if in progress) so each
+	// block's leading wake window is the true awake gap since the previous one.
+	let cursor = anchor;
+	const projected: ProjectedSleep[] = sleeps.map((sp, index) => {
+		const durationMin = sp.end != null ? Math.round((sp.end - sp.start) / 60_000) : null;
+		const wakeWindowBeforeMin = Math.max(0, Math.round((sp.start - cursor) / 60_000));
+		cursor = sp.end ?? sp.start;
+		return {
+			index,
+			type: sp.type,
+			status: 'completed',
+			start: sp.start,
+			end: sp.end,
+			projectedEnd: sp.end,
+			durationMin,
+			wakeWindowBeforeMin,
+			wakeWindowReduced: false,
+			tooShort: sp.type === 'nap' && durationMin != null && durationMin <= shortNapThresholdMin,
+			entryId: sp.id
+		};
+	});
+
+	return {
+		anchor,
+		anchorIsActual: morningWake != null,
+		sleeps: projected,
+		nextSleep: null,
+		currentState: { asleep: false, since: anchor, elapsedMin: 0 },
+		budget: {
+			daytimeUsedMin: 0,
+			daytimeCapMin: null,
+			totalTargetMin: null,
+			napsCompleted: 0,
+			wakeUsedMin: 0,
+			wakeBudgetMin: 0
+		}
 	};
 }

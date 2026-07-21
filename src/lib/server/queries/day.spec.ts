@@ -4,6 +4,7 @@ import {
 	groupDayForKey,
 	shiftDateKey,
 	summariseGrouping,
+	completedProjection,
 	localDateKey,
 	type DayEntry,
 	type DayGrouping
@@ -204,5 +205,58 @@ describe('summariseGrouping', () => {
 		const s = summariseGrouping(base([], U(2026, 7, 9, 7)));
 		expect(s.daytimeSleepMin).toBe(0);
 		expect(s.napCount).toBe(0);
+	});
+});
+
+describe('completedProjection — anchor selection', () => {
+	const REF = U(2026, 7, 9, 7); // morning reference (fallback anchor) for the day
+	const g = (sleeps: DayGrouping['sleeps'], morningWake: number | null): DayGrouping => ({
+		sleeps,
+		morningWake,
+		overnightEntryId: null
+	});
+
+	it('uses the actual morning wake when there is one', () => {
+		const p = completedProjection(
+			g(
+				[{ id: 'n', type: 'nap', start: U(2026, 7, 9, 9), end: U(2026, 7, 9, 10) }],
+				U(2026, 7, 9, 6, 30)
+			),
+			15,
+			REF
+		);
+		expect(p.anchor).toBe(U(2026, 7, 9, 6, 30));
+		expect(p.anchorIsActual).toBe(true);
+	});
+
+	it('anchors on the first nap when no morning wake is logged', () => {
+		const p = completedProjection(
+			g([{ id: 'n', type: 'nap', start: U(2026, 7, 9, 9), end: U(2026, 7, 9, 10) }], null),
+			15,
+			REF
+		);
+		expect(p.anchor).toBe(U(2026, 7, 9, 9));
+		expect(p.anchorIsActual).toBe(false);
+	});
+
+	it('never anchors on a lone bedtime — falls back to the morning reference', () => {
+		// Regression: a day whose only log is the night bedtime used to anchor onto the
+		// bedtime itself, collapsing the whole day onto it. It must fall back instead.
+		const p = completedProjection(
+			g([{ id: 'bed', type: 'night', start: U(2026, 7, 9, 18), end: null }], null),
+			15,
+			REF
+		);
+		expect(p.anchor).toBe(REF);
+		expect(p.anchorIsActual).toBe(false);
+		// The bedtime's leading window is the true gap from the reference (07:00 → 18:00).
+		expect(p.sleeps).toHaveLength(1);
+		expect(p.sleeps[0].wakeWindowBeforeMin).toBe(11 * 60);
+	});
+
+	it('falls back to the reference for an empty day', () => {
+		const p = completedProjection(g([], null), 15, REF);
+		expect(p.anchor).toBe(REF);
+		expect(p.sleeps).toHaveLength(0);
 	});
 });

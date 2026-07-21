@@ -22,10 +22,9 @@ import {
 	upsertDayOverride,
 	clearDayOverride
 } from '$lib/server/queries/dayOverride';
-import { localDateKey, type DayGrouping } from '$lib/server/queries/day';
+import { localDateKey, completedProjection } from '$lib/server/queries/day';
 import { buildProjection } from '$lib/server/queries/projection';
 import { resolveViewedDay } from '$lib/server/queries/viewedDay';
-import type { Projection, ProjectedSleep } from '$lib/projection/types';
 import {
 	parseSleepCreate,
 	parseSleepUpdate,
@@ -55,63 +54,6 @@ function overnightDraftFor(
 		? resolveClockTime(targetBedtime, anchor, timeZone) - DAY_MS
 		: anchor - 12 * 3_600_000;
 	return { start, end: anchor };
-}
-
-/**
- * A completed-only projection for a past day: its actual logged sleeps rendered as
- * `completed` blocks, with no projected tail, now-line, or current state. Wake
- * windows are the real awake gaps between the anchor and each sleep. The `budget`
- * fields are zeroed because the timeline view never reads them (only `anchor`,
- * `anchorIsActual`, and `sleeps`).
- */
-function completedProjection(
-	grouping: DayGrouping,
-	shortNapThresholdMin: number,
-	dayStart: number
-): Projection {
-	const { sleeps, morningWake } = grouping;
-	// Visual top anchor: the actual morning wake once one exists, else the day's first
-	// sleep start (avoids a phantom overnight-awake gap); `dayStart` (local midnight)
-	// is the last resort for a reachable but empty in-between day.
-	const anchor = morningWake ?? sleeps[0]?.start ?? dayStart;
-
-	// Advance a cursor through each sleep's end (or start, if in progress) so each
-	// block's leading wake window is the true awake gap since the previous one.
-	let cursor = anchor;
-	const projected: ProjectedSleep[] = sleeps.map((sp, index) => {
-		const durationMin = sp.end != null ? Math.round((sp.end - sp.start) / 60_000) : null;
-		const wakeWindowBeforeMin = Math.max(0, Math.round((sp.start - cursor) / 60_000));
-		cursor = sp.end ?? sp.start;
-		return {
-			index,
-			type: sp.type,
-			status: 'completed',
-			start: sp.start,
-			end: sp.end,
-			projectedEnd: sp.end,
-			durationMin,
-			wakeWindowBeforeMin,
-			wakeWindowReduced: false,
-			tooShort: sp.type === 'nap' && durationMin != null && durationMin <= shortNapThresholdMin,
-			entryId: sp.id
-		};
-	});
-
-	return {
-		anchor,
-		anchorIsActual: morningWake != null,
-		sleeps: projected,
-		nextSleep: null,
-		currentState: { asleep: false, since: anchor, elapsedMin: 0 },
-		budget: {
-			daytimeUsedMin: 0,
-			daytimeCapMin: null,
-			totalTargetMin: null,
-			napsCompleted: 0,
-			wakeUsedMin: 0,
-			wakeBudgetMin: 0
-		}
-	};
 }
 
 export const load: PageServerLoad = ({ cookies, url }) => {
@@ -169,10 +111,16 @@ export const load: PageServerLoad = ({ cookies, url }) => {
 	// Past day: only that day's actual logged sleeps, as completed blocks. No
 	// projected tail, now-line, inline editor, or overlay — those are live-only.
 	const grouping = assembleDayForKey(view.viewedDayKey, timeZone);
-	// Local midnight of the viewed day — the anchor fallback for a day with no logged
-	// sleeps and no morning wake (keeps the layout off epoch 0).
-	const dayStart = resolveLocalDateTime(`${view.viewedDayKey}T00:00`, timeZone);
-	const projection = completedProjection(grouping, settings.shortNapThresholdMin, dayStart);
+	// The morning reference for the viewed day (global day-start, else the template's
+	// wake time) — the anchor fallback when no morning wake and no nap are logged, so
+	// a bedtime-only (or empty) day lays out around its morning, not epoch 0 or the
+	// bedtime itself. Falls back to local midnight if the reference is malformed.
+	const refWake = settings.dayStartTime || template.referenceWakeTime;
+	const fallbackAnchor = resolveLocalDateTime(
+		`${view.viewedDayKey}T${refWake || '00:00'}`,
+		timeZone
+	);
+	const projection = completedProjection(grouping, settings.shortNapThresholdMin, fallbackAnchor);
 
 	const shownIds = new Set<string>(grouping.sleeps.map((s) => s.id));
 	if (grouping.overnightEntryId) shownIds.add(grouping.overnightEntryId);

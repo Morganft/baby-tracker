@@ -91,17 +91,25 @@
 			planned: boolean;
 		}[] = [];
 		let cursor = data.projection.anchor;
+		let first = true;
 		for (const s of sleeps) {
 			if (s.start > cursor) {
-				out.push({
-					start: cursor,
-					end: s.start,
-					min: s.wakeWindowBeforeMin,
-					reduced: s.wakeWindowReduced,
-					planned: s.status === 'projected'
-				});
+				// On a past day with no actual morning wake, the anchor is a synthetic
+				// morning reference, so the stretch from it to the first logged sleep is
+				// unallocated (unknown), not awake time — leave it as empty space.
+				const unallocated = first && !data.isToday && !data.projection.anchorIsActual;
+				if (!unallocated) {
+					out.push({
+						start: cursor,
+						end: s.start,
+						min: s.wakeWindowBeforeMin,
+						reduced: s.wakeWindowReduced,
+						planned: s.status === 'projected'
+					});
+				}
 			}
 			cursor = s.projectedEnd ?? s.end ?? s.start;
+			first = false;
 		}
 		return out;
 	});
