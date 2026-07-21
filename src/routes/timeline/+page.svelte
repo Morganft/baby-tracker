@@ -136,16 +136,69 @@
 	});
 
 	const PX_PER_MIN = 1.4;
-	// Floor for a block's height. Every sleep/awake block stacks two text rows (a
-	// label and a time/duration row, ~20px each), so a very short entry — a ≤15-min
-	// nap is only ~21px of true span — must still be lifted to this so its second
-	// row isn't clipped by `overflow-hidden`. Such a block overruns its true span
-	// and slightly overlaps the next one; later-drawn blocks paint on top.
+	// A nap or awake window must never render shorter than this — enough for its two
+	// text rows (a label and a time/duration row, ~20px each). Rather than clamp each
+	// block's height in isolation (which makes a short block overrun its true span and
+	// overlap the next one), the axis itself is warped to guarantee it: see `layout`.
 	const MIN_BLOCK_PX = 40;
 	// Extra pixels below the last marker; the open-ended bedtime block extends into
 	// this so its faded edge meets the container bottom (no floating gap).
 	const BOTTOM_PAD_PX = 24;
-	const pos = (epoch: number) => ((epoch - bounds.start) / 60_000) * PX_PER_MIN;
+
+	// Warped vertical axis: a piecewise-linear time→pixel map. The day scales at
+	// PX_PER_MIN, except any nap or awake window whose natural height would fall below
+	// MIN_BLOCK_PX is stretched up to it. Because the gridlines, the now-line and every
+	// block all read from this one map, they stay mutually consistent — a stretched
+	// region simply draws taller and its hour lines spread apart to match. So short
+	// blocks stay readable, can never overlap their neighbour, and a run of them just
+	// stretches that stretch of the timeline instead of collapsing.
+	const layout = $derived.by(() => {
+		// The blocks that are actually rendered and must clear MIN_BLOCK_PX: the drawn
+		// naps + awake windows, plus the editable tail's future naps/windows. Mirrors
+		// the render's skip rules so a block is never counted twice or split.
+		const minBlocks = [
+			...sleeps
+				.filter((s) => s.type === 'nap' && !(editable && s.status === 'projected'))
+				.map((s) => ({ start: s.start, end: s.projectedEnd ?? s.end ?? s.start })),
+			...windows
+				.filter((w) => !(editable && w.planned))
+				.map((w) => ({ start: w.start, end: w.end }))
+		];
+		if (editable) for (const b of tail.blocks) minBlocks.push({ start: b.start, end: b.end });
+		const stretched = minBlocks.filter((b) => b.end > b.start);
+
+		// Control points: the span ends plus every stretched-block edge, sorted, deduped.
+		const pts = [bounds.start, bounds.end];
+		for (const b of stretched) {
+			if (b.start > bounds.start && b.start < bounds.end) pts.push(b.start);
+			if (b.end > bounds.start && b.end < bounds.end) pts.push(b.end);
+		}
+		const times = pts.sort((a, b) => a - b).filter((t, i, a) => i === 0 || t !== a[i - 1]);
+
+		// Cumulative pixel offset at each control point. A segment that exactly spans a
+		// stretched block is lifted to at least MIN_BLOCK_PX; every other span is natural.
+		const offsets = [0];
+		for (let i = 1; i < times.length; i++) {
+			const a = times[i - 1];
+			const c = times[i];
+			const natural = ((c - a) / 60_000) * PX_PER_MIN;
+			const isBlock = stretched.some((b) => b.start <= a && b.end >= c);
+			offsets.push(offsets[i - 1] + (isBlock ? Math.max(natural, MIN_BLOCK_PX) : natural));
+		}
+		return { times, offsets };
+	});
+
+	// Pixel offset of an instant on the warped axis (linear within each segment).
+	const pos = (epoch: number): number => {
+		const { times, offsets } = layout;
+		if (times.length < 2) return 0;
+		const t = Math.min(Math.max(epoch, times[0]), times[times.length - 1]);
+		let i = 0;
+		while (i < times.length - 1 && times[i + 1] <= t) i++;
+		const a = times[i];
+		const c = times[i + 1] ?? a;
+		return c === a ? offsets[i] : offsets[i] + ((offsets[i + 1] - offsets[i]) * (t - a)) / (c - a);
+	};
 	const height = $derived(pos(bounds.end) + BOTTOM_PAD_PX);
 
 	// On-the-hour gridlines across the span (local wall-clock hours).

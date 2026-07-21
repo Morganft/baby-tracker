@@ -120,6 +120,12 @@ function blockTop(container: HTMLElement, text: string): number | undefined {
 	return blockBox(container, text)?.top;
 }
 
+// Every sleep/awake block stacks two text rows: a label ("Nap N", `text-sm`) and a
+// time/duration row ("HH:MM–HH:MM · Dur", also carrying a `text-sm` figure). Each row
+// is ~20px, so a block needs ~40px to show both without the second being clipped by
+// its `overflow-hidden`. The warped axis guarantees every block at least this tall.
+const MIN_TWO_LINE_PX = 40;
+
 /** Top + rendered height (px, from the inline style) of the block labelled `text`. */
 function blockBox(
 	container: HTMLElement,
@@ -183,6 +189,55 @@ function pastDayWithShortNap(): PageData {
 	} as unknown as PageData;
 }
 
+// A past day with three ~10-min naps packed back-to-back (short windows between).
+// Every block — naps and the awake gaps — is under the min-height, so the whole run
+// stretches the axis rather than collapsing or overlapping.
+function pastDayWithShortNapRun(): PageData {
+	const entries = [
+		{ id: 'lastnight', type: 'night' as const, start: on(8, '19:00'), end: at('07:00') },
+		{ id: 'n1', type: 'nap' as const, start: at('09:00'), end: at('09:10') },
+		{ id: 'n2', type: 'nap' as const, start: at('09:25'), end: at('09:35') },
+		{ id: 'n3', type: 'nap' as const, start: at('09:50'), end: at('10:00') }
+	];
+	const grouping = groupDayForKey(entries, '2026-07-09', TZ);
+	const projection = completedProjection(grouping, 15, at('07:00'));
+
+	return {
+		viewedDayKey: '2026-07-09',
+		todayKey: '2026-07-10',
+		isToday: false,
+		prevKey: '2026-07-08',
+		nextKey: '2026-07-10',
+		minKey: '2026-07-01',
+		label: 'Thu 9 Jul 2026',
+		now: at('23:59'),
+		timeZone: TZ,
+		clock24h: true,
+		templateName: 'Test plan',
+		entryZones: {},
+		entries: {
+			n1: sleepEntry({ id: 'n1', type: 'nap', startTime: at('09:00'), endTime: at('09:10') }),
+			n2: sleepEntry({ id: 'n2', type: 'nap', startTime: at('09:25'), endTime: at('09:35') }),
+			n3: sleepEntry({ id: 'n3', type: 'nap', startTime: at('09:50'), endTime: at('10:00') }),
+			lastnight: sleepEntry({ id: 'lastnight', startTime: on(8, '19:00'), endTime: at('07:00') })
+		},
+		overnightEntryId: grouping.overnightEntryId,
+		overnightDraft: null,
+		overrideActive: false,
+		plan: null,
+		projection
+	} as unknown as PageData;
+}
+
+/** Top (px) of the hour-gridline row whose label is exactly `label`, or undefined. */
+function gridlineTop(container: HTMLElement, label: string): number | undefined {
+	const el = Array.from(container.querySelectorAll<HTMLElement>('[style*="top:"]')).find(
+		(n) => n.textContent?.trim() === label
+	);
+	const m = el?.getAttribute('style')?.match(/top:\s*([\d.]+)px/);
+	return m ? Number(m[1]) : undefined;
+}
+
 describe('Timeline — past day, only a bedtime logged (no morning wake)', () => {
 	it('anchors the day at the morning reference, not the bedtime', () => {
 		expect(pastDayWithOnlyBedtime().projection.anchor).toBe(at('07:00'));
@@ -235,12 +290,6 @@ describe('Timeline — today, only tonight’s bedtime logged', () => {
 });
 
 describe('Timeline — short sleep blocks stay readable', () => {
-	// Every sleep block stacks two text rows: a label ("Nap N", `text-sm`) and a
-	// time/duration row ("HH:MM–HH:MM · Dur", also carrying a `text-sm` figure).
-	// Each row is ~20px tall, so a block needs ~40px to show both without the
-	// second being clipped by its `overflow-hidden`.
-	const MIN_TWO_LINE_PX = 40;
-
 	it('renders both text rows of a ≤15-min nap', () => {
 		render(Page, { props: { data: pastDayWithShortNap(), form: null } });
 		// Label row and time/duration row must both be present and legible.
@@ -266,5 +315,47 @@ describe('Timeline — short sleep blocks stay readable', () => {
 		const short = blockBox(container, 'Nap 1');
 		const long = blockBox(container, 'Nap 2');
 		expect(short!.height).toBeGreaterThanOrEqual(Math.min(long!.height, MIN_TWO_LINE_PX));
+	});
+});
+
+describe('Timeline — blocks do not overlap their neighbour', () => {
+	it('keeps the short nap block from spilling into the awake window below it', () => {
+		const { container } = render(Page, { props: { data: pastDayWithShortNap(), form: null } });
+		// The nap runs 09:00–09:12; the next block is the awake window 09:12–12:00,
+		// positioned by clock time at ~17px below the nap's top. If the nap's box is
+		// taller than its true span it overruns that boundary and covers the awake
+		// window's start. A block must end at or above where the next one begins.
+		const nap = blockBox(container, 'Nap 1');
+		const awake = blockBox(container, '09:12–12:00');
+		expect(nap).toBeDefined();
+		expect(awake).toBeDefined();
+		expect(nap!.top + nap!.height).toBeLessThanOrEqual(awake!.top);
+	});
+
+	it('keeps a run of short naps readable, ordered and non-overlapping', () => {
+		const { container } = render(Page, { props: { data: pastDayWithShortNapRun(), form: null } });
+		const naps = ['Nap 1', 'Nap 2', 'Nap 3'].map((n) => blockBox(container, n));
+		// Each short nap still gets its full readable height…
+		for (const nap of naps) {
+			expect(nap).toBeDefined();
+			expect(nap!.height).toBeGreaterThanOrEqual(MIN_TWO_LINE_PX);
+		}
+		// …and they stay in order, each ending at or above where the next one begins,
+		// so the packed run stretches the axis instead of collapsing onto itself.
+		for (let i = 1; i < naps.length; i++) {
+			expect(naps[i - 1]!.top + naps[i - 1]!.height).toBeLessThanOrEqual(naps[i]!.top);
+		}
+	});
+
+	it('keeps each block sitting on its own time gridline', () => {
+		const { container } = render(Page, { props: { data: pastDayWithShortNap(), form: null } });
+		// Nap 1 starts at 09:00, so its top must line up with the 09:00 hour gridline —
+		// blocks and gridlines both read the same warped axis, so a stretched region
+		// never desynchronises the two.
+		const nap = blockBox(container, 'Nap 1');
+		const grid = gridlineTop(container, '09:00');
+		expect(nap).toBeDefined();
+		expect(grid).toBeDefined();
+		expect(grid!).toBeCloseTo(nap!.top, 1);
 	});
 });
