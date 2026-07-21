@@ -117,11 +117,70 @@ function pastDayWithOnlyBedtime(): PageData {
 
 /** The absolute-positioned block whose label contains `text`, or undefined. */
 function blockTop(container: HTMLElement, text: string): number | undefined {
+	return blockBox(container, text)?.top;
+}
+
+/** Top + rendered height (px, from the inline style) of the block labelled `text`. */
+function blockBox(
+	container: HTMLElement,
+	text: string
+): { top: number; height: number } | undefined {
 	const el = Array.from(container.querySelectorAll<HTMLElement>('[style*="top:"]')).find((n) =>
 		n.textContent?.includes(text)
 	);
-	const m = el?.getAttribute('style')?.match(/top:\s*([\d.]+)px/);
-	return m ? Number(m[1]) : undefined;
+	const style = el?.getAttribute('style') ?? '';
+	const top = style.match(/top:\s*([\d.]+)px/);
+	const height = style.match(/height:\s*([\d.]+)px/);
+	return top && height ? { top: Number(top[1]), height: Number(height[1]) } : undefined;
+}
+
+// A past day whose log is a normal morning wake, one very short nap (≤ the 15-min
+// short-nap threshold) and one full-length nap. Built through the real past-day
+// path (`groupDayForKey` + `completedProjection`) so the short nap renders as a
+// genuine `completed` block, exactly as the server would emit it.
+function pastDayWithShortNap(): PageData {
+	const entries = [
+		{ id: 'lastnight', type: 'night' as const, start: on(8, '19:00'), end: at('07:00') },
+		{ id: 'shortnap', type: 'nap' as const, start: at('09:00'), end: at('09:12') }, // 12 min
+		{ id: 'longnap', type: 'nap' as const, start: at('12:00'), end: at('13:30') } // 90 min
+	];
+	const grouping = groupDayForKey(entries, '2026-07-09', TZ);
+	const projection = completedProjection(grouping, 15, at('07:00'));
+
+	return {
+		viewedDayKey: '2026-07-09',
+		todayKey: '2026-07-10',
+		isToday: false,
+		prevKey: '2026-07-08',
+		nextKey: '2026-07-10',
+		minKey: '2026-07-01',
+		label: 'Thu 9 Jul 2026',
+		now: at('23:59'),
+		timeZone: TZ,
+		clock24h: true,
+		templateName: 'Test plan',
+		entryZones: {},
+		entries: {
+			shortnap: sleepEntry({
+				id: 'shortnap',
+				type: 'nap',
+				startTime: at('09:00'),
+				endTime: at('09:12')
+			}),
+			longnap: sleepEntry({
+				id: 'longnap',
+				type: 'nap',
+				startTime: at('12:00'),
+				endTime: at('13:30')
+			}),
+			lastnight: sleepEntry({ id: 'lastnight', startTime: on(8, '19:00'), endTime: at('07:00') })
+		},
+		overnightEntryId: grouping.overnightEntryId,
+		overnightDraft: null,
+		overrideActive: false,
+		plan: null,
+		projection
+	} as unknown as PageData;
 }
 
 describe('Timeline — past day, only a bedtime logged (no morning wake)', () => {
@@ -172,5 +231,40 @@ describe('Timeline — today, only tonight’s bedtime logged', () => {
 	it('does not offer the inline tail editor once bedtime is logged', () => {
 		render(Page, { props: { data: todayWithOnlyBedtime(), form: null } });
 		expect(screen.queryByRole('button', { name: '+ Add nap' })).not.toBeInTheDocument();
+	});
+});
+
+describe('Timeline — short sleep blocks stay readable', () => {
+	// Every sleep block stacks two text rows: a label ("Nap N", `text-sm`) and a
+	// time/duration row ("HH:MM–HH:MM · Dur", also carrying a `text-sm` figure).
+	// Each row is ~20px tall, so a block needs ~40px to show both without the
+	// second being clipped by its `overflow-hidden`.
+	const MIN_TWO_LINE_PX = 40;
+
+	it('renders both text rows of a ≤15-min nap', () => {
+		render(Page, { props: { data: pastDayWithShortNap(), form: null } });
+		// Label row and time/duration row must both be present and legible.
+		expect(screen.getByText('Nap 1')).toBeInTheDocument();
+		expect(screen.getByText('12m')).toBeInTheDocument();
+		expect(screen.getByText(/09:00–09:12/)).toBeInTheDocument();
+	});
+
+	it('gives the short nap block enough height for its two text rows', () => {
+		const { container } = render(Page, { props: { data: pastDayWithShortNap(), form: null } });
+		// 12 min * 1.4 px/min ≈ 17px of timeline span — well under one line, let alone
+		// two. The block must be lifted to at least a readable two-line height so the
+		// time/duration row isn't hidden.
+		const short = blockBox(container, 'Nap 1');
+		expect(short).toBeDefined();
+		expect(short!.height).toBeGreaterThanOrEqual(MIN_TWO_LINE_PX);
+	});
+
+	it('never sizes the short nap smaller than a normal-length one', () => {
+		const { container } = render(Page, { props: { data: pastDayWithShortNap(), form: null } });
+		// A 90-min nap has room to spare; the 12-min nap carries the same two rows and
+		// must not be squeezed below what a comfortable block gets.
+		const short = blockBox(container, 'Nap 1');
+		const long = blockBox(container, 'Nap 2');
+		expect(short!.height).toBeGreaterThanOrEqual(Math.min(long!.height, MIN_TWO_LINE_PX));
 	});
 });

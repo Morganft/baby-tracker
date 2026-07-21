@@ -136,6 +136,12 @@
 	});
 
 	const PX_PER_MIN = 1.4;
+	// Floor for a block's height. Every sleep/awake block stacks two text rows (a
+	// label and a time/duration row, ~20px each), so a very short entry — a ≤15-min
+	// nap is only ~21px of true span — must still be lifted to this so its second
+	// row isn't clipped by `overflow-hidden`. Such a block overruns its true span
+	// and slightly overlaps the next one; later-drawn blocks paint on top.
+	const MIN_BLOCK_PX = 40;
 	// Extra pixels below the last marker; the open-ended bedtime block extends into
 	// this so its faded edge meets the container bottom (no floating gap).
 	const BOTTOM_PAD_PX = 24;
@@ -158,7 +164,7 @@
 	const overnight = $derived.by(() => {
 		const top = pos(data.projection.anchor - PAD_MS);
 		const end = pos(data.projection.anchor);
-		return { top, height: Math.max(end - top, 22), wake: data.projection.anchor };
+		return { top, height: Math.max(end - top, MIN_BLOCK_PX), wake: data.projection.anchor };
 	});
 
 	const statusStyle: Record<string, string> = {
@@ -567,7 +573,7 @@
 		{#each windows as w (w.start)}
 			{#if !(editable && w.planned)}
 				{@const top = pos(w.start)}
-				{@const h = Math.max(pos(w.end) - top, 22)}
+				{@const h = Math.max(pos(w.end) - top, MIN_BLOCK_PX)}
 				<div
 					class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border px-3 {w.planned
 						? 'border-dashed border-amber-500/40 bg-amber-500/[0.08]'
@@ -596,7 +602,7 @@
 					<!-- Bedtime: open-ended (the day's close), rendered as a block that
 				     fills the bottom pad below its start. -->
 					{@const end = s.projectedEnd ?? s.start + PAD_MS}
-					{@const h = Math.max(pos(end) - top, 22) + BOTTOM_PAD_PX}
+					{@const h = Math.max(pos(end) - top, MIN_BLOCK_PX) + BOTTOM_PAD_PX}
 					<button
 						type="button"
 						onclick={() => openSleep(s)}
@@ -619,7 +625,7 @@
 					</button>
 				{:else}
 					{@const end = s.projectedEnd ?? s.start}
-					{@const h = Math.max(pos(end) - top, 22)}
+					{@const h = Math.max(pos(end) - top, MIN_BLOCK_PX)}
 					<button
 						type="button"
 						onclick={() => openSleep(s)}
@@ -656,7 +662,7 @@
 		{#if editable}
 			{#each tail.blocks as b (b.kind + b.idx)}
 				{@const top = pos(b.start)}
-				{@const h = Math.max(pos(b.end) - top, 22)}
+				{@const h = Math.max(pos(b.end) - top, MIN_BLOCK_PX)}
 				{#if b.kind === 'nap'}
 					{@const moving = movingSpec?.type === 'nap-move' && movingSpec.index === b.idx}
 					<button
@@ -746,7 +752,7 @@
 				'bedtime'
 					? 'ring-2 ring-indigo-500'
 					: ''}"
-				style="top: {bedTop}px; height: {Math.max(pos(bounds.end) - bedTop, 22)}px"
+				style="top: {bedTop}px; height: {Math.max(pos(bounds.end) - bedTop, MIN_BLOCK_PX)}px"
 			>
 				<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
 					🌙 Bedtime {time(tail.bedStart)}<span class="font-normal opacity-60"> · planned</span>
