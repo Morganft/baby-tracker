@@ -8,6 +8,12 @@ node_modules
 /.svelte-kit
 /build
 
+# Playwright
+/test-results
+/playwright-report
+/playwright/.cache
+/e2e/.tmp
+
 # OS
 .DS_Store
 Thumbs.db
@@ -26,3 +32,6 @@ vite.config.ts.timestamp-*
 *.db-wal
 *.db-shm
 /data
+
+# E2E isolated deps (node 24 image build of better-sqlite3)
+/.e2e-modules

@@ -25,6 +25,22 @@ export default defineConfig({
 		projects: [
 			{
 				extends: './vite.config.ts',
+				// Resolve Svelte's browser build so `mount()` works under jsdom;
+				// without this, Vitest's SSR pipeline picks the server build and
+				// rendering throws `mount(...) is not available on the server`.
+				resolve: { conditions: ['browser'] },
+				test: {
+					name: 'client',
+					environment: 'jsdom',
+					// Component tests: files named `*.svelte.spec.ts`, run against a
+					// browser-like DOM. Keep server-only code out of this project.
+					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+					exclude: ['src/lib/server/**'],
+					setupFiles: ['./vitest-setup-client.ts']
+				}
+			},
+			{
+				extends: './vite.config.ts',
 				test: {
 					name: 'server',
 					environment: 'node',

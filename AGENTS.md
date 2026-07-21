@@ -39,6 +39,28 @@ Examples (`<command>`):
 - `npm run build` — production build (adapter-node → `build/`)
 - `npm run test` — vitest once · `npm run test:unit` — watch mode
   - single test: append `-- --run src/path/to/x.spec.ts -t "name"`
+  - two vitest projects: **`server`** (node env, pure logic) and **`client`**
+    (jsdom env, Svelte component tests named `*.svelte.spec.ts`). Both run in
+    plain `node:22`.
+- `npm run test:e2e` — Playwright end-to-end smoke tests (`e2e/`). Boots a
+  production build via `vite preview` and drives a real browser, so it needs the
+  browsers + system libs that **`node:22` lacks**. Run it in the Playwright
+  image, mounting a **separate `node_modules`** (`/.e2e-modules`, gitignored) so
+  its node-24 build of the native `better-sqlite3` doesn't clobber the node-22
+  build the other gates use:
+  ```bash
+  mkdir -p .e2e-modules
+  docker run --rm --user "$(id -u):$(id -g)" \
+    -e HOME=/tmp -e npm_config_cache=/tmp/.npm \
+    -v "$PWD":/app -v "$PWD/.e2e-modules":/app/node_modules -w /app \
+    mcr.microsoft.com/playwright:v1.61.1-noble \
+    bash -lc 'npm ci && npm run test:e2e'
+  ```
+  Match the image tag to the installed `@playwright/test` version. No
+  `DATABASE_URL` needed — `e2e/global-setup.ts` seeds an isolated, writable copy
+  of `local.db` under `e2e/.tmp/` (the app writes during ordinary GET loads, so
+  the suite must not share the dev DB). If your Docker containers have no DNS,
+  add `--network host`.
 - `npm run db:generate` — generate a Drizzle migration after editing `schema.ts`
 - `npm run db:push` — push schema straight to a dev DB (skips migration files)
 - `npm run db:studio` — Drizzle Studio
