@@ -512,8 +512,7 @@
 			></span> planned</span
 		>
 		<span class="flex items-center gap-1"
-			><span
-				class="inline-block h-3 w-3 rounded-sm border border-amber-500/40 bg-amber-500/15"
+			><span class="inline-block h-3 w-3 rounded-sm border border-amber-500/40 bg-amber-500/15"
 			></span> awake</span
 		>
 	</div>
@@ -568,7 +567,8 @@
 					style="top: {top}px; height: {h}px"
 				>
 					<p class="truncate text-xs font-medium text-amber-700/80 dark:text-amber-400/80">
-						Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400"> · short</span
+						Awake{#if w.reduced}<span class="text-amber-600 dark:text-amber-400">
+								· short</span
 							>{/if}
 					</p>
 					<p class="truncate text-sm text-amber-800 dark:text-amber-300">
@@ -631,9 +631,9 @@
 						</span>
 						<span class="block truncate text-xs opacity-70">
 							{time(s.start)}–{time(end)}
-							{#if s.durationMin != null}· <span class="text-sm font-semibold">{fmtDuration(
-										s.durationMin
-									)}</span>{:else if s.status === 'projected'}· <span class="text-sm font-semibold"
+							{#if s.durationMin != null}· <span class="text-sm font-semibold"
+									>{fmtDuration(s.durationMin)}</span
+								>{:else if s.status === 'projected'}· <span class="text-sm font-semibold"
 									>~{fmtDuration(Math.round((end - s.start) / 60_000))}</span
 								>{/if}
 						</span>
@@ -716,7 +716,9 @@
 						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-dashed border-amber-500/40 bg-amber-500/[0.08] px-3"
 						style="top: {top}px; height: {h}px"
 					>
-						<p class="truncate text-xs font-medium text-amber-700/80 dark:text-amber-400/80">Awake</p>
+						<p class="truncate text-xs font-medium text-amber-700/80 dark:text-amber-400/80">
+							Awake
+						</p>
 						<p class="truncate text-sm text-amber-800 dark:text-amber-300">
 							{time(b.start)}–{time(b.end)} ·
 							<span class="text-base font-semibold">{fmtDuration(b.min)}</span>

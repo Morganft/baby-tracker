@@ -82,7 +82,7 @@ services:
 
 Optional but recommended — run the **preflight build gate** first. It reproduces
 the Dockerfile's build stage with no `DATABASE_URL` (deploy conditions), catching
-any server module that connects to the DB or reads a required env var at *import*
+any server module that connects to the DB or reads a required env var at _import_
 time — a class of bug the normal `npm run build` gate hides because it sets
 `DATABASE_URL`:
 
