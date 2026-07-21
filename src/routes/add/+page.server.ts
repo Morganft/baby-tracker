@@ -11,16 +11,9 @@ import {
 	resolveEntryTimezone
 } from '$lib/server/api/validate';
 import { resolveLocalDateTime } from '$lib/projection/time';
+import { safeFrom, safeDate, returnPath } from './returnPath';
 import { fail, redirect, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-
-/** The views that link here; the form returns to whichever opened it. */
-type FromPath = '/' | '/timeline' | '/history';
-
-/** Constrain the `from` param to a known in-app view (guards open-redirect). */
-function safeFrom(from: string | null): FromPath {
-	return from === '/timeline' || from === '/history' ? from : '/';
-}
 
 export const load: PageServerLoad = ({ url, cookies }) => {
 	const settings = getSettings();
@@ -28,7 +21,9 @@ export const load: PageServerLoad = ({ url, cookies }) => {
 		now: Date.now(),
 		timeZone: resolveDisplayZone(cookies.get('tz')),
 		clock24h: settings.clock24h,
-		from: safeFrom(url.searchParams.get('from'))
+		from: safeFrom(url.searchParams.get('from')),
+		// The day the origin view was showing, so the form returns to it (not today).
+		date: safeDate(url.searchParams.get('date'))
 	};
 };
 
@@ -38,6 +33,7 @@ export const actions: Actions = {
 	create: async ({ request }) => {
 		const b = await request.formData();
 		const from = safeFrom(s(b.get('from')));
+		const date = safeDate(s(b.get('date')));
 		// Resolve the typed wall-clock in the same zone we store, so the epoch round-trips.
 		// The enhanced form sends the phone's own zone; both ends share it (a manual add
 		// is typed against one clock — cross-zone edits are done later in History).
@@ -70,6 +66,6 @@ export const actions: Actions = {
 			throw e;
 		}
 
-		redirect(303, from);
+		redirect(303, returnPath(from, date));
 	}
 };

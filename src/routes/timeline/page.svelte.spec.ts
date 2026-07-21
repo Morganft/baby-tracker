@@ -262,6 +262,20 @@ describe('Timeline — past day, only a bedtime logged (no morning wake)', () =>
 	});
 });
 
+describe('Timeline — Add sleep keeps the viewed day', () => {
+	it('carries the viewed day into the Add-sleep link on a past day', () => {
+		render(Page, { props: { data: pastDayWithOnlyBedtime(), form: null } });
+		const add = screen.getByRole('link', { name: /Add sleep/ });
+		expect(add).toHaveAttribute('href', '/add?from=/timeline&date=2026-07-09');
+	});
+
+	it('omits the day from the Add-sleep link when viewing today', () => {
+		render(Page, { props: { data: todayWithOnlyBedtime(), form: null } });
+		const add = screen.getByRole('link', { name: /Add sleep/ });
+		expect(add).toHaveAttribute('href', '/add?from=/timeline');
+	});
+});
+
 describe('Timeline — today, only tonight’s bedtime logged', () => {
 	it('shows the logged bedtime block (in-progress, not planned)', () => {
 		render(Page, { props: { data: todayWithOnlyBedtime(), form: null } });

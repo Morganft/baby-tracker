@@ -15,14 +15,16 @@
 	const entryZone = $derived(browserTimeZone());
 	// Prefill the start with "now" in that zone; end left blank (in progress).
 	const startDefault = $derived(toDateTimeInput(data.now, entryZone));
+
+	// Return to the origin view, carrying the day it was showing (Cancel + save
+	// redirect both target this, so a past day survives the round-trip).
+	const back = $derived(data.date ? resolve(`${data.from}?date=${data.date}`) : resolve(data.from));
 </script>
 
 <section class="space-y-5">
 	<div class="flex items-center justify-between">
 		<h2 class="text-xl font-semibold">Add sleep</h2>
-		<a href={resolve(data.from)} class="text-sm font-medium text-indigo-600 dark:text-indigo-400"
-			>Cancel</a
-		>
+		<a href={back} class="text-sm font-medium text-indigo-600 dark:text-indigo-400">Cancel</a>
 	</div>
 
 	{#if form && 'message' in form && form.message}
@@ -33,6 +35,7 @@
 
 	<form method="POST" action="?/create" class="space-y-4" use:enhance>
 		<input type="hidden" name="from" value={data.from} />
+		<input type="hidden" name="date" value={data.date ?? ''} />
 		<input type="hidden" name="timezone" value={entryZone} />
 
 		<label class="block text-xs font-medium opacity-70">

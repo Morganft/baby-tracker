@@ -561,7 +561,7 @@
 			{/if}
 		</div>
 		<a
-			href={resolve('/add?from=/timeline')}
+			href={resolve(`/add?from=/timeline${data.isToday ? '' : `&date=${data.viewedDayKey}`}`)}
 			class="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-indigo-600 active:scale-95 dark:border-white/20 dark:text-indigo-400"
 		>
 			+ Add sleep
