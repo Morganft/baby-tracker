@@ -95,6 +95,10 @@
 	}
 
 	const typeLabel = (t: 'nap' | 'night') => (t === 'night' ? 'bedtime' : 'nap');
+
+	// The "Adjust time" panel is a <details>; its open state is uncontrolled DOM
+	// state that enhance's update() won't touch, so bind it and collapse on save.
+	let adjustOpen = $state(false);
 </script>
 
 <section class="space-y-3">
@@ -131,7 +135,7 @@
 			</p>
 
 			{#if editable}
-				<details class="group mt-3 text-sm">
+				<details class="group mt-3 text-sm" bind:open={adjustOpen}>
 					<summary class="cursor-pointer list-none opacity-60 group-open:opacity-100">
 						Adjust time
 					</summary>
@@ -145,7 +149,10 @@
 								'time',
 								String(resolveClockTime(hhmm, editable!.current, data.timeZone))
 							);
-							return ({ update }) => update();
+							return async ({ update }) => {
+								await update();
+								adjustOpen = false;
+							};
 						}}
 					>
 						<input type="hidden" name="id" value={editable.id} />
