@@ -9,6 +9,7 @@ import { localDateKey } from './day';
 import { getSettings } from './settings';
 import { assembleDay } from './sleeps';
 import { project } from '$lib/projection/project';
+import { planBedtime } from '$lib/projection/planBedtime';
 import type { Projection } from '$lib/projection/types';
 
 /**
@@ -18,9 +19,18 @@ import type { Projection } from '$lib/projection/types';
  */
 export function buildProjection(now: number, timeZone: string): Projection {
 	// A per-day overlay reshapes just today; absent one, the active slot drives the day.
-	const template = getDayOverride(localDateKey(now, timeZone)) ?? getActiveTemplate();
+	const override = getDayOverride(localDateKey(now, timeZone));
+	const template = override ?? getActiveTemplate();
 	const settings = getSettings();
 	const { sleeps, morningWake } = assembleDay(now, timeZone);
+	// The soft target bedtime is the plan's *own* cascaded bedtime (reference wake +
+	// wake windows + nap durations), so the projection always steers toward the
+	// bedtime the plan draws — never a separately-stored value that could diverge.
+	// A per-day overlay ("Adjusted for today") deliberately keeps the legacy sliding
+	// cascade (null target) so hand-shaping the tail sticks instead of redistributing.
+	const targetBedtime = override
+		? null
+		: planBedtime(template.referenceWakeTime, template.wakeWindows, template.expectedNapDurations);
 	return project({
 		now,
 		timeZone,
@@ -31,7 +41,7 @@ export function buildProjection(now: number, timeZone: string): Projection {
 			napCount: template.napCount,
 			wakeWindows: template.wakeWindows,
 			expectedNapDurations: template.expectedNapDurations,
-			targetBedtime: template.targetBedtime,
+			targetBedtime,
 			wakeWindowMin: template.wakeWindowMin ?? undefined,
 			wakeWindowMax: template.wakeWindowMax ?? undefined,
 			napDurationMin: template.napDurationMin ?? undefined,

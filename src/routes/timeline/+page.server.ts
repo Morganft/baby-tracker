@@ -34,6 +34,7 @@ import {
 	type TemplateInput
 } from '$lib/server/api/validate';
 import { resolveClockTime, resolveLocalDateTime } from '$lib/projection/time';
+import { planBedtime } from '$lib/projection/planBedtime';
 import { fail, isHttpError, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -42,8 +43,8 @@ const DAY_MS = 86_400_000;
 /**
  * A prefill for logging last night's sleep when the overnight block is only
  * planned: it ends at the projected morning wake (the block's anchor) and starts
- * at last night's target bedtime — this evening's target rolled back a day, or a
- * plain 12h before the wake when no target bedtime is set.
+ * at last night's bedtime — the plan's cascaded bedtime rolled back a day, or a
+ * plain 12h before the wake when the plan has no resolvable bedtime.
  */
 function overnightDraftFor(
 	targetBedtime: string | null | undefined,
@@ -99,7 +100,15 @@ export const load: PageServerLoad = ({ cookies, url }) => {
 			...base,
 			entries,
 			overnightEntryId,
-			overnightDraft: overnightDraftFor(template.targetBedtime, projection.anchor, timeZone),
+			overnightDraft: overnightDraftFor(
+				planBedtime(
+					template.referenceWakeTime,
+					template.wakeWindows,
+					template.expectedNapDurations
+				),
+				projection.anchor,
+				timeZone
+			),
 			overrideActive,
 			// The effective plan the inline tail editor seeds from: today's overlay if one
 			// exists, else the saved active plan. Raw arrays (napCount/wakeWindows/naps).

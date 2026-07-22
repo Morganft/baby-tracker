@@ -92,11 +92,15 @@ A template defines a day's plan (no age association — chosen manually):
   haven't happened yet
 - `nap_duration_min[]`, `nap_duration_max[]` — per-position bounds for each nap
   (same length as `expected_nap_durations`). **Enforced** during redistribution.
-- `target_bedtime` — the wall-clock bedtime the day is steered back toward; a
-  **soft** anchor for the redistributed cascade (§5). Redistribution aims for it
-  but never violates a wake-window/nap bound to hit it: when the remaining sleeps
-  can't fit within bounds, bedtime floats past the target rather than a nap being
-  dropped.
+- **Target bedtime** — the wall-clock bedtime the day is steered back toward; a
+  **soft** anchor for the redistributed cascade (§5). It is **not stored
+  separately**: it is the plan's own cascaded bedtime — `reference_wake_time` plus
+  every `wake_window` and `expected_nap_duration` — so shaping the plan moves the
+  bedtime and the projection always follows it (never a stale independent value).
+  Redistribution aims for it but never violates a wake-window/nap bound to hit it:
+  when the remaining sleeps can't fit within bounds, bedtime floats past the target
+  rather than a nap being dropped. (A per-day "adjust for today" overlay is the one
+  exception — it keeps the legacy sliding cascade so hand-shaping the tail sticks.)
 - `daily_total_sleep_target`, `daytime_cap` — **reference only**
 
 #### Library + active slot
@@ -134,11 +138,12 @@ most recent wake-up.
    re-anchors to the **actual** time.
 2. **Re-project on every log, steering toward a soft target bedtime.** After each
    logged event (a wake-up, or a nap's actual end), the app re-projects **all
-   remaining sleeps** so they steer toward the template's **`target_bedtime`**.
-   Rather than sliding every remaining sleep by a fixed delta (which would let
-   total awake time drift), it **redistributes** the interval from the last
-   actual wake to `target_bedtime` across the remaining wake windows and naps,
-   steering each back toward its template value. `target_bedtime` is a **soft**
+   remaining sleeps** so they steer toward the **plan's own bedtime** (the target
+   bedtime — the plan cascade's end, `reference_wake_time` + the wake windows +
+   nap durations). Rather than sliding every remaining sleep by a fixed delta
+   (which would let total awake time drift), it **redistributes** the interval from
+   the last actual wake to that bedtime across the remaining wake windows and naps,
+   steering each back toward its template value. The target bedtime is a **soft**
    target, not a fixed wall (see §5.4).
 3. **Redistribution is bounded and prioritised.** Each recalculated value is
    clamped to its per-position bound (`wake_window_min/max`,

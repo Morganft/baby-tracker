@@ -59,7 +59,9 @@ function templateFromForm(b: FormData): TemplateInput {
 		daytimeCap: numOrNull(b.get('daytimeCap')),
 		bedtimeStart: s(b.get('bedtimeStart')) || null,
 		bedtimeEnd: s(b.get('bedtimeEnd')) || null,
-		targetBedtime: s(b.get('targetBedtime')) || null,
+		// The bedtime is defined by the plan's shape (reference wake + windows + naps)
+		// and derived at projection time — there's no separately-stored target to keep.
+		targetBedtime: null,
 		wakeWindowMin: csvOrNull(b.get('wakeWindowMin')),
 		wakeWindowMax: csvOrNull(b.get('wakeWindowMax')),
 		napDurationMin: csvOrNull(b.get('napDurationMin')),

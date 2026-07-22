@@ -21,8 +21,7 @@
 		referenceWakeTime: data.active.referenceWakeTime,
 		napCount: data.active.napCount,
 		wakeWindows: data.active.wakeWindows.join(', '),
-		expectedNapDurations: data.active.expectedNapDurations.join(', '),
-		targetBedtime: data.active.targetBedtime ?? ''
+		expectedNapDurations: data.active.expectedNapDurations.join(', ')
 	});
 	// --- Undo / redo. A snapshot of exactly the timeline-driven fields in `f`;
 	// the reversible unit for a drag, resize, tap-edit, or add/remove-nap. ---
@@ -31,28 +30,24 @@
 		napCount: number;
 		wakeWindows: string;
 		expectedNapDurations: string;
-		targetBedtime: string;
 	};
 	const snapshot = (): Snap => ({
 		referenceWakeTime: f.referenceWakeTime,
 		napCount: f.napCount,
 		wakeWindows: f.wakeWindows,
-		expectedNapDurations: f.expectedNapDurations,
-		targetBedtime: f.targetBedtime
+		expectedNapDurations: f.expectedNapDurations
 	});
 	function applySnap(s: Snap) {
 		f.referenceWakeTime = s.referenceWakeTime;
 		f.napCount = s.napCount;
 		f.wakeWindows = s.wakeWindows;
 		f.expectedNapDurations = s.expectedNapDurations;
-		f.targetBedtime = s.targetBedtime;
 	}
 	const snapEqual = (a: Snap, b: Snap) =>
 		a.referenceWakeTime === b.referenceWakeTime &&
 		a.napCount === b.napCount &&
 		a.wakeWindows === b.wakeWindows &&
-		a.expectedNapDurations === b.expectedNapDurations &&
-		a.targetBedtime === b.targetBedtime;
+		a.expectedNapDurations === b.expectedNapDurations;
 
 	let hist = $state<History<Snap>>(initHistory(snapshot()));
 	const canUndo = $derived(hist.past.length > 0);
@@ -89,8 +84,7 @@
 			referenceWakeTime: active.referenceWakeTime,
 			napCount: active.napCount,
 			wakeWindows: active.wakeWindows.join(', '),
-			expectedNapDurations: active.expectedNapDurations.join(', '),
-			targetBedtime: active.targetBedtime ?? ''
+			expectedNapDurations: active.expectedNapDurations.join(', ')
 		};
 		// An auto-save reload echoes the on-screen values (next === current), so
 		// history is left intact. A Load/Overwrite brings a different plan — treat
@@ -244,7 +238,6 @@
 		}
 		push('awake', n, ww[n]); // final window leading into bedtime
 
-		const target = parseHM(f.targetBedtime);
 		return {
 			ok: true as const,
 			anchor,
@@ -254,8 +247,7 @@
 			bedClock: fmtClock(anchor + cursor),
 			napCount: n,
 			daySleep: nd.reduce((a, b) => a + b, 0),
-			awakeTotal: ww.reduce((a, b) => a + b, 0),
-			targetClock: target === null ? null : fmtClock(target)
+			awakeTotal: ww.reduce((a, b) => a + b, 0)
 		};
 	});
 
@@ -386,7 +378,7 @@
 	// re-triggers this effect.
 	let saveArmed = false;
 	$effect(() => {
-		void [f.referenceWakeTime, f.napCount, f.wakeWindows, f.expectedNapDurations, f.targetBedtime];
+		void [f.referenceWakeTime, f.napCount, f.wakeWindows, f.expectedNapDurations];
 		if (!saveArmed) {
 			saveArmed = true;
 			return;
@@ -792,11 +784,7 @@
 							style="top: {y(plan.bedMin)}px; height: {BOTTOM_PAD}px"
 						>
 							<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
-								🌙 Bedtime {plan.bedClock}{#if plan.targetClock}<span
-										class="font-normal opacity-60"
-									>
-										· target {plan.targetClock}</span
-									>{/if}
+								🌙 Bedtime {plan.bedClock}
 							</p>
 						</button>
 						{@render lockToggle(
@@ -819,11 +807,9 @@
 						>
 							+ Add nap
 						</button>
-						{#if plan.targetClock}
-							<span class="text-indigo-600 dark:text-indigo-400"
-								>target bedtime {plan.targetClock} — sleeps redistribute to land here</span
-							>
-						{/if}
+						<span class="text-indigo-600 dark:text-indigo-400"
+							>bedtime {plan.bedClock} — today's sleeps redistribute to land here</span
+						>
 					</div>
 				{/if}
 			</div>
@@ -851,7 +837,6 @@
 				<input type="hidden" name="napCount" value={f.napCount} />
 				<input type="hidden" name="wakeWindows" value={f.wakeWindows} />
 				<input type="hidden" name="expectedNapDurations" value={f.expectedNapDurations} />
-				<input type="hidden" name="targetBedtime" value={f.targetBedtime} />
 
 				<p class="px-1 text-xs opacity-60">
 					{#if saveState === 'saving'}
@@ -885,7 +870,8 @@
 							<p class="font-medium opacity-70">Redistribution bounds (optional)</p>
 							<p class="text-[0.6875rem] font-normal opacity-50">
 								Min/max minutes per position, comma-separated. Windows need {Number(f.napCount) + 1} values,
-								naps need {Number(f.napCount)}. Only used when a target bedtime is set.
+								naps need {Number(f.napCount)}. Enforced when today's sleeps redistribute toward the
+								plan's bedtime.
 							</p>
 							<div class="grid grid-cols-2 gap-3">
 								<label class="block font-medium opacity-70">
@@ -1207,12 +1193,10 @@
 					oninput={(ev) => setWin(plan.ok ? plan.napCount : 0, numVal(ev))}
 					class={inputClass}
 				/>
-			</label>
-			<label class="block text-xs font-medium opacity-70">
-				Target bedtime
-				<input type="time" bind:value={f.targetBedtime} class={inputClass} />
 				<span class="mt-0.5 block text-[0.6875rem] font-normal opacity-50"
-					>Set it to redistribute remaining sleeps onto a fixed bedtime.</span
+					>Bedtime{#if plan.ok}
+						is {plan.bedClock}{/if} — set by the plan's shape. Today's sleeps redistribute to land on
+					it.</span
 				>
 			</label>
 			{@render lockRow(
