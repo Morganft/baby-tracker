@@ -264,7 +264,10 @@
 		if (!data.overrideActive) {
 			for (const sp of data.projection.sleeps) {
 				if (sp.status !== 'projected') continue;
-				wins[sp.index] = sp.wakeWindowBeforeMin;
+				// Bedtime's window is always the plan's final (pre-bed) slot — its own
+				// index can sit past napCount when extra naps were logged, so pin it here.
+				const wi = sp.type === 'night' ? wins.length - 1 : sp.index;
+				wins[wi] = sp.wakeWindowBeforeMin;
 				if (sp.type === 'nap' && sp.projectedEnd != null) {
 					naps[sp.index] = Math.round((sp.projectedEnd - sp.start) / MS);
 				}

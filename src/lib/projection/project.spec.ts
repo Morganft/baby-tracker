@@ -136,10 +136,11 @@ describe('project — overlay reshapes today (per-day plan override)', () => {
 		expect(p.sleeps[3].type).toBe('night');
 	});
 
-	// Guards the reason the editor clamps removeNap in today mode: the legacy cascade
-	// only surfaces napCount + 1 slots, so an overlay that drops napCount below the
-	// naps already logged today would omit a nap that actually happened.
-	it('drops a logged nap beyond the overlay napCount (why the editor clamps)', () => {
+	// An overlay that drops napCount below the naps already logged today still
+	// surfaces every logged nap — the extra ones are rendered past the plan, with
+	// bedtime projected after the last of them (the editor's removeNap clamp keeps
+	// the overlay from getting into this state, but the engine is robust regardless).
+	it('still surfaces a logged nap beyond the overlay napCount', () => {
 		const reduced: TemplateConfig = {
 			referenceWakeTime: '07:00',
 			napCount: 1, // overlay cut to a single nap…
@@ -151,10 +152,71 @@ describe('project — overlay reshapes today (per-day plan override)', () => {
 			build({ template: reduced, morningWake: at('07:00'), now: at('13:30'), sleeps })
 		);
 
-		expect(p.sleeps).toHaveLength(2); // only nap 0 + bedtime
+		expect(p.sleeps).toHaveLength(3); // both naps + bedtime
 		const ids = p.sleeps.map((s) => s.entryId).filter(Boolean);
-		expect(ids).toEqual(['a']); // nap 'b' is not surfaced
-		expect(p.budget.napsCompleted).toBe(1); // and it's missing from the budget
+		expect(ids).toEqual(['a', 'b']); // nap 'b' is surfaced too
+		expect(p.budget.napsCompleted).toBe(2);
+		const bed = p.sleeps[2];
+		expect(bed.type).toBe('night');
+		expect(bed.start).toBe(at('17:00')); // 13:00 end + wakeWindows[napCount]=240m
+	});
+});
+
+describe('project — a nap logged beyond the planned count still appears', () => {
+	const threeNaps: TemplateConfig = {
+		referenceWakeTime: '07:00',
+		napCount: 3,
+		wakeWindows: [120, 120, 120, 120],
+		expectedNapDurations: [90, 60, 45]
+	};
+
+	it('surfaces a 4th logged nap and projects bedtime after it (legacy cascade)', () => {
+		const sleeps = [
+			nap('n1', '09:00', '10:00'),
+			nap('n2', '12:00', '13:00'),
+			nap('n3', '15:00', '15:45'),
+			nap('n4', '17:30', '18:00') // the extra nap beyond the 3-nap plan
+		];
+		const p = project(
+			build({ template: threeNaps, morningWake: at('07:00'), now: at('18:30'), sleeps })
+		);
+
+		const naps = p.sleeps.filter((s) => s.type === 'nap');
+		expect(naps).toHaveLength(4); // all four surface, not just the planned three
+		expect(p.sleeps.map((s) => s.entryId).filter(Boolean)).toEqual(['n1', 'n2', 'n3', 'n4']);
+		expect(p.budget.napsCompleted).toBe(4);
+
+		const bed = p.sleeps[p.sleeps.length - 1];
+		expect(bed.type).toBe('night');
+		expect(bed.status).toBe('projected');
+		// Pre-bed window = wakeWindows[napCount] = 120m after the 4th nap's 18:00 end.
+		expect(bed.start).toBe(at('20:00'));
+
+		// Indices stay unique so the timeline can key on them.
+		expect(new Set(p.sleeps.map((s) => s.index)).size).toBe(p.sleeps.length);
+	});
+
+	it('surfaces a 4th logged nap under target-bedtime redistribution', () => {
+		const withTarget: TemplateConfig = { ...threeNaps, targetBedtime: '19:30' };
+		const sleeps = [
+			nap('n1', '09:00', '10:00'),
+			nap('n2', '12:00', '13:00'),
+			nap('n3', '15:00', '15:45'),
+			nap('n4', '17:30', '18:00')
+		];
+		const p = project(
+			build({ template: withTarget, morningWake: at('07:00'), now: at('18:30'), sleeps })
+		);
+
+		const naps = p.sleeps.filter((s) => s.type === 'nap');
+		expect(naps).toHaveLength(4);
+		expect(p.sleeps.map((s) => s.entryId).filter(Boolean)).toEqual(['n1', 'n2', 'n3', 'n4']);
+		expect(p.budget.napsCompleted).toBe(4);
+
+		const bed = p.sleeps[p.sleeps.length - 1];
+		expect(bed.type).toBe('night');
+		expect(bed.status).toBe('projected');
+		expect(new Set(p.sleeps.map((s) => s.index)).size).toBe(p.sleeps.length);
 	});
 });
 

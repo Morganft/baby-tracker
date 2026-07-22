@@ -149,13 +149,14 @@ export function project(input: ProjectionInput): Projection {
 	const redistribute = nightEntry == null && !!template.targetBedtime;
 
 	if (!redistribute) {
-		// ---- Legacy cascade: unchanged behaviour, index 0..napCount ----
-		for (let index = 0; index <= napCount; index++) {
-			const isBed = index === napCount;
-			const type = isBed ? 'night' : 'nap';
-			const entry = isBed ? nightEntry : (napEntries[index] ?? null);
-
-			// Template window into this sleep, with per-day override and short-nap rule.
+		// ---- Legacy cascade: naps 0..napSlots-1, then bedtime ----
+		// Surface every logged nap even when it exceeds the plan's napCount, so a nap
+		// logged past the planned count still appears (bedtime then follows it). Only
+		// the first `napCount` slots can ever be *projected*; the extras are all logged.
+		const napSlots = Math.max(napCount, napEntries.length);
+		const projectNap = (index: number, entry: LoggedSleep | null): void => {
+			// Template window into this nap, with per-day override and short-nap rule.
+			// (Only consulted for a projected nap, which never happens past napCount.)
 			const override = overrides[index];
 			let windowMin = override ?? wakeWindows[index];
 			let reduced = false;
@@ -170,18 +171,20 @@ export function project(input: ProjectionInput): Projection {
 			if (entry) {
 				const completed = entry.end != null;
 				const durationMin = completed ? msToMinutes((entry.end as number) - entry.start) : null;
-				const tooShort =
-					type === 'nap' && durationMin != null && durationMin <= settings.shortNapThresholdMin;
-				// Estimate an end for in-progress sleeps so the cascade can continue.
+				const tooShort = durationMin != null && durationMin <= settings.shortNapThresholdMin;
+				// Estimate an end for an in-progress nap so the cascade can continue;
+				// naps past the plan have no template duration, so fall back to the last.
+				const expected =
+					expectedNapDurations[index] ??
+					expectedNapDurations[expectedNapDurations.length - 1] ??
+					60;
 				const estimatedEnd = completed
 					? (entry.end as number)
-					: isBed
-						? null
-						: entry.start + minutesToMs(expectedNapDurations[index]);
+					: entry.start + minutesToMs(expected);
 
 				result.push({
 					index,
-					type,
+					type: 'nap',
 					status: completed ? 'completed' : 'in-progress',
 					start: entry.start,
 					end: entry.end,
@@ -193,27 +196,24 @@ export function project(input: ProjectionInput): Projection {
 					entryId: entry.id
 				});
 
-				if (type === 'nap') {
-					if (completed) {
-						daytimeUsedMin += durationMin as number;
-						napsCompleted += 1;
-					} else {
-						// In-progress nap: count elapsed toward the daytime budget.
-						daytimeUsedMin += Math.max(0, msToMinutes(now - entry.start));
-					}
+				if (completed) {
+					daytimeUsedMin += durationMin as number;
+					napsCompleted += 1;
+				} else {
+					// In-progress nap: count elapsed toward the daytime budget.
+					daytimeUsedMin += Math.max(0, msToMinutes(now - entry.start));
 				}
 
 				if (!completed) asleepEntry = entry;
-				// Advance the cascade past this sleep (actual end, or estimate).
-				if (estimatedEnd != null) lastWake = estimatedEnd;
+				lastWake = estimatedEnd;
 				if (completed) lastCompletedWake = entry.end as number;
 			} else {
-				// Projected sleep.
+				// Projected nap.
 				const start = lastWake + minutesToMs(windowMin);
-				const end = isBed ? null : start + minutesToMs(expectedNapDurations[index]);
+				const end = start + minutesToMs(expectedNapDurations[index]);
 				result.push({
 					index,
-					type,
+					type: 'nap',
 					status: 'projected',
 					start,
 					end: null,
@@ -223,20 +223,77 @@ export function project(input: ProjectionInput): Projection {
 					wakeWindowReduced: reduced,
 					tooShort: false
 				});
-				lastWake = end ?? start;
+				lastWake = end;
 			}
+		};
+
+		for (let index = 0; index < napSlots; index++) {
+			projectNap(index, napEntries[index] ?? null);
+		}
+
+		// Bedtime after the last nap. Its window is always the plan's final (pre-bed)
+		// window; its index sits after every nap so timeline keys stay unique.
+		const bedIndex = napSlots;
+		const override = overrides[napCount];
+		let bedWindow = override ?? wakeWindows[napCount];
+		let bedReduced = false;
+		if (override == null) {
+			const prev = result[bedIndex - 1];
+			if (prev && prev.type === 'nap' && prev.tooShort) {
+				bedWindow = reduceWindow(bedWindow, settings.shortNapReductionPercent);
+				bedReduced = true;
+			}
+		}
+		if (nightEntry) {
+			const completed = nightEntry.end != null;
+			const durationMin = completed
+				? msToMinutes((nightEntry.end as number) - nightEntry.start)
+				: null;
+			result.push({
+				index: bedIndex,
+				type: 'night',
+				status: completed ? 'completed' : 'in-progress',
+				start: nightEntry.start,
+				end: nightEntry.end,
+				projectedEnd: nightEntry.end,
+				durationMin,
+				wakeWindowBeforeMin: Math.round(msToMinutes(nightEntry.start - lastWake)),
+				wakeWindowReduced: false,
+				tooShort: false,
+				entryId: nightEntry.id
+			});
+			if (!completed) asleepEntry = nightEntry;
+			if (completed) lastCompletedWake = nightEntry.end as number;
+		} else {
+			result.push({
+				index: bedIndex,
+				type: 'night',
+				status: 'projected',
+				start: lastWake + minutesToMs(bedWindow),
+				end: null,
+				projectedEnd: null,
+				durationMin: null,
+				wakeWindowBeforeMin: bedWindow,
+				wakeWindowReduced: bedReduced,
+				tooShort: false
+			});
 		}
 	} else {
 		// ---- Redistribution: logged naps (prefix) + fixed-bedtime tail ----
-		const loggedNaps = Math.min(napEntries.length, napCount);
-		for (let index = 0; index < loggedNaps; index++) {
+		// Every logged nap is rendered, even ones past the plan's napCount; the
+		// redistributed tail then covers only the planned naps still to come
+		// (none, once the logged naps already meet or exceed napCount).
+		const renderedNaps = napEntries.length;
+		const tailStart = Math.min(renderedNaps, napCount);
+		for (let index = 0; index < renderedNaps; index++) {
 			const entry = napEntries[index];
 			const completed = entry.end != null;
 			const durationMin = completed ? msToMinutes((entry.end as number) - entry.start) : null;
 			const tooShort = durationMin != null && durationMin <= settings.shortNapThresholdMin;
-			const estimatedEnd = completed
-				? (entry.end as number)
-				: entry.start + minutesToMs(expectedNapDurations[index]);
+			// Naps past the plan have no template duration; fall back to the last.
+			const expected =
+				expectedNapDurations[index] ?? expectedNapDurations[expectedNapDurations.length - 1] ?? 60;
+			const estimatedEnd = completed ? (entry.end as number) : entry.start + minutesToMs(expected);
 
 			result.push({
 				index,
@@ -263,14 +320,17 @@ export function project(input: ProjectionInput): Projection {
 			lastWake = estimatedEnd;
 		}
 
-		// Build the projected tail's slots: windows m..napCount, naps m..napCount-1.
+		// Build the projected tail's slots: windows tailStart..napCount, naps
+		// tailStart..napCount-1 (empty once every planned nap is already logged).
 		const windowSlots: Slot[] = [];
-		for (let i = loggedNaps; i <= napCount; i++) {
+		for (let i = tailStart; i <= napCount; i++) {
 			const override = overrides[i];
 			let target = override ?? wakeWindows[i];
 			let reduced = false;
+			// The first tail window follows the last *logged* nap (which may sit past
+			// napCount); later tail windows follow a not-yet-pushed projected nap.
+			const prev = i === tailStart ? result[renderedNaps - 1] : result[i - 1];
 			if (override == null && i >= 1) {
-				const prev = result[i - 1];
 				if (prev && prev.type === 'nap' && prev.tooShort) {
 					target = reduceWindow(target, settings.shortNapReductionPercent);
 					reduced = true;
@@ -284,7 +344,7 @@ export function project(input: ProjectionInput): Projection {
 			});
 		}
 		const napSlots: Slot[] = [];
-		for (let i = loggedNaps; i < napCount; i++) {
+		for (let i = tailStart; i < napCount; i++) {
 			napSlots.push({
 				target: expectedNapDurations[i],
 				min: template.napDurationMin?.[i] ?? 0,
@@ -301,7 +361,8 @@ export function project(input: ProjectionInput): Projection {
 
 		const solved = redistributeTail(windowSlots, napSlots, available);
 
-		let index = loggedNaps;
+		// Projected sleeps get indices after every rendered nap so timeline keys stay unique.
+		let index = renderedNaps;
 		let cursor = lastWake;
 		for (let j = 0; j < solved.napValues.length; j++) {
 			const windowMin = Math.round(solved.windowValues[j]);
