@@ -76,3 +76,8 @@ Non-critical items deferred from delivery. Each: `- [<area>] <what> — <why it 
 - [ux] Undo history covers only the timeline-driven fields (wake, windows, nap durations, target bedtime). The Advanced-drawer fields (plan name, redistribution bounds, reference budget) are not in the history — they keep native per-field text undo. Fold them in if drawer edits ever need reverting too.
 - [ux] For up to ~500ms after a fresh edit (before the debounced commit clears the redo stack), the Redo button can appear enabled even though redoing is a no-op. Cosmetic; eager-clear the redo stack on the first tracked change if it looks off.
 - [cleanup] `commitTimer`/`saveTimer` are not cleared on component destroy (matches the pre-existing `saveTimer` pattern). Harmless because the submit reads live values, but a shared onDestroy cleanup would be tidier.
+
+## 2026-07-22 — Form-reset audit (save must not blank fields)
+
+- [ux] Home "Adjust time" form (`src/routes/+page.svelte` `?/adjust`) calls `update()` without `reset: false`, so the browser's `form.reset()` blanks its `value={toHHMM(...)}` field on save. Not user-visible today because the `<details>` panel collapses (`adjustOpen = false`) on save and re-renders fresh when reopened — but it violates the REQUIREMENTS §6 "Forms" rule. Add `reset: false` and a colocated test for symmetry with settings/templates/history.
+- [test-coverage] The timeline auto-save overlay and nap-popup edit forms already opt out of the reset (`reset: false`) but have no colocated field-retention test. Their pages carry heavy fixtures (projection + pointer gestures); add guards when those pages next get touched.

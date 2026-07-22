@@ -22,7 +22,16 @@
 		</p>
 	{/if}
 
-	<form method="POST" action="?/save" class="space-y-5" use:enhance>
+	<form
+		method="POST"
+		action="?/save"
+		class="space-y-5"
+		use:enhance={() =>
+			// reset:false keeps the fields showing their values after saving; they come
+			// from `value={s.x}`, which enhance's default form reset would blank.
+			async ({ update }) =>
+				update({ reset: false })}
+	>
 		<div
 			class="space-y-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
 		>

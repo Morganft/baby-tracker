@@ -199,6 +199,18 @@ never blocking.
 - **Today's timeline** — today's sleeps on a 24h view, **planned vs. actual**.
 - **History list** — scrollable chronological entries, editable.
 
+### Forms
+
+- **A save must never blank the form.** After a form is successfully submitted,
+  every editable field must still show its current value (the just-saved value or
+  the reloaded server value) — a save is not a "clear". Progressively-enhanced
+  forms therefore must opt out of `use:enhance`'s default form reset
+  (`update({ reset: false })`) whenever their fields are Svelte-bound `value={…}`
+  inputs, since the browser's `form.reset()` blanks those.
+- **Each such form carries a test** asserting its fields retain their values across
+  a submit (see the `*.svelte.spec.ts` colocated with the settings and templates
+  pages), so this regression is caught in CI rather than by hand.
+
 ### Alerts
 
 - **On-screen only** — suggestions/warnings shown in the app; no push notifications.
