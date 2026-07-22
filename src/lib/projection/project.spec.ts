@@ -242,6 +242,46 @@ describe('project — in-progress sleep', () => {
 		expect(p.budget.daytimeUsedMin).toBe(30);
 		expect(p.budget.napsCompleted).toBe(0);
 	});
+
+	it('grows an over-running nap to now and cascades from there', () => {
+		// Nap started 09:00 (expected 90m → 10:30), but it's now 11:00 and the baby
+		// is still asleep: the block ends at now, as if logged with end = now.
+		const sleeps = [nap('n1', '09:00', null)];
+		const p = project(build({ morningWake: at('07:00'), now: at('11:00'), sleeps }));
+
+		const [n1, n2] = p.sleeps;
+		expect(n1.status).toBe('in-progress');
+		expect(n1.end).toBeNull();
+		expect(n1.projectedEnd).toBe(at('11:00')); // floored at now, not 10:30
+
+		// Next nap cascades from now, not from the past estimate.
+		expect(n2.start).toBe(at('13:30')); // 11:00 + 150m
+	});
+});
+
+describe('project — active awake past the wake window', () => {
+	it('grows the current awake window to now and cascades from there (legacy)', () => {
+		// Awake since 07:00; the first nap is due at 09:00 (WW1 120m) but it's now
+		// 09:30 and the baby is still up: the current window grows to now, as if the
+		// nap started now.
+		const p = project(build({ morningWake: at('07:00'), now: at('09:30') }));
+
+		const [n1, n2] = p.sleeps;
+		expect(n1.status).toBe('projected');
+		expect(n1.start).toBe(at('09:30')); // floored at now, not 09:00
+		expect(n1.wakeWindowBeforeMin).toBe(150); // actual awake 07:00→09:30, not 120
+		expect(n1.projectedEnd).toBe(at('11:00')); // 09:30 + expected 90m
+
+		// The rest of the day cascades from the grown window.
+		expect(n2.start).toBe(at('13:30')); // 11:00 + WW2 150m
+	});
+
+	it('leaves the window untouched before it lapses', () => {
+		const p = project(build({ morningWake: at('07:00'), now: at('08:00') }));
+		const n1 = p.sleeps[0];
+		expect(n1.start).toBe(at('09:00')); // still the planned 07:00 + 120m
+		expect(n1.wakeWindowBeforeMin).toBe(120);
+	});
 });
 
 describe('project — normal day in progress', () => {
@@ -346,6 +386,18 @@ describe('project — soft-target-bedtime redistribution', () => {
 			})
 		);
 		expect(legacy.sleeps[2].start).toBe(at('18:30'));
+	});
+
+	it('grows the current awake window to now, floating bedtime past the soft target', () => {
+		// No naps logged; the first is due at 09:00 (WW1 120m) but it's now 09:45 and
+		// the baby is still awake. The window grows to now and the tail cascades from
+		// there, so the soft target bedtime floats later rather than snapping back.
+		const p = project(buildB({ morningWake: at('07:00'), now: at('09:45') }));
+
+		const [n1, , bed] = p.sleeps;
+		expect(n1.start).toBe(at('09:45')); // floored at now, not 09:00
+		expect(n1.wakeWindowBeforeMin).toBe(165); // actual awake 07:00→09:45
+		expect(bed.start).toBe(at('18:45')); // floated 45m past the 18:00 target
 	});
 
 	it('pins naps at their minimum before flexing the wake windows', () => {

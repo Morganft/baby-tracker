@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import { project } from '$lib/projection/project';
@@ -69,6 +69,47 @@ function todayWithOnlyBedtime(): PageData {
 		templateName: 'Test plan',
 		entryZones: {},
 		entries: { night: sleepEntry({ id: 'night', startTime: at('18:00') }) },
+		overnightEntryId: g.overnightEntryId,
+		overnightDraft: { start: projection.anchor - 12 * 3_600_000, end: projection.anchor },
+		overrideActive: false,
+		plan: template,
+		projection
+	} as unknown as PageData;
+}
+
+// Today, awake past the first wake window: a morning wake at 07:00, no naps yet,
+// and it's now 09:45 — 45m past the 09:00 the first nap was due. The projected tail
+// is still editable (bedtime not logged), so the current awake block should grow to
+// the now-line and the rest of the day cascade from there.
+function todayAwakePastWindow(): PageData {
+	const now = at('09:45');
+	const entries = [
+		{ id: 'lastnight', type: 'night' as const, start: on(8, '19:00'), end: at('07:00') }
+	];
+	const g = groupDay(entries, now, TZ);
+	const projection = project({
+		now,
+		timeZone: TZ,
+		template,
+		settings: { shortNapThresholdMin: 15, shortNapReductionPercent: 30 },
+		sleeps: g.sleeps,
+		morningWake: g.morningWake
+	});
+
+	return {
+		viewedDayKey: '2026-07-09',
+		todayKey: '2026-07-09',
+		isToday: true,
+		prevKey: '2026-07-08',
+		nextKey: null,
+		minKey: '2026-07-01',
+		label: 'Thu 9 Jul 2026',
+		now,
+		timeZone: TZ,
+		clock24h: true,
+		templateName: 'Test plan',
+		entryZones: {},
+		entries: {},
 		overnightEntryId: g.overnightEntryId,
 		overnightDraft: { start: projection.anchor - 12 * 3_600_000, end: projection.anchor },
 		overrideActive: false,
@@ -300,6 +341,21 @@ describe('Timeline — today, only tonight’s bedtime logged', () => {
 	it('does not offer the inline tail editor once bedtime is logged', () => {
 		render(Page, { props: { data: todayWithOnlyBedtime(), form: null } });
 		expect(screen.queryByRole('button', { name: '+ Add nap' })).not.toBeInTheDocument();
+	});
+});
+
+describe('Timeline — today, awake past the current wake window', () => {
+	// The live now-line reads the real clock after mount, so pin it to the mocked
+	// "now" (09:45) — otherwise the client-side grow-to-now floors to the wall clock.
+	afterEach(() => vi.useRealTimers());
+
+	it('grows the current awake block to the now-line and cascades from there', () => {
+		vi.useFakeTimers({ now: at('09:45'), toFake: ['Date'] });
+		const { container } = render(Page, { props: { data: todayAwakePastWindow(), form: null } });
+		// The current awake window spans 07:00 → now (09:45), 2h 45m, not the plan's 2h,
+		// and Nap 1 (planned) then starts at the grown window's end, not the lapsed 09:00.
+		expect(blockBox(container, '07:00–09:45')).toBeDefined();
+		expect(blockBox(container, '09:45–11:15')).toBeDefined();
 	});
 });
 

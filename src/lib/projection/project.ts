@@ -137,6 +137,14 @@ export function project(input: ProjectionInput): Projection {
 	const napEntries = sorted.filter((s) => s.type === 'nap');
 	const nightEntry = sorted.find((s) => s.type === 'night') ?? null;
 
+	// Whether the baby is asleep right now (any logged sleep still open). Only then
+	// do we suppress growing a projected wake window to `now`: the current period is
+	// that sleep, and any still-projected naps are either future (after it) or stale
+	// (e.g. an in-progress bedtime logged before morning naps were ever recorded).
+	const asleepNow = sleeps.some((s) => s.end == null);
+	// Grow the *current* awake window's projected start to now when awake past it.
+	const floorAwake = (rawStart: number) => (asleepNow ? rawStart : Math.max(rawStart, now));
+
 	const result: ProjectedSleep[] = [];
 	let lastWake = anchor; // wake that the next window is measured from
 	let lastCompletedWake = anchor; // for awake elapsed
@@ -178,9 +186,13 @@ export function project(input: ProjectionInput): Projection {
 					expectedNapDurations[index] ??
 					expectedNapDurations[expectedNapDurations.length - 1] ??
 					60;
+				// An in-progress nap ends no earlier than now: once it runs past its
+				// expected duration, grow its block to the current moment (as if it were
+				// logged with end = now) so the cascade continues from a real wake, not
+				// a past estimate.
 				const estimatedEnd = completed
 					? (entry.end as number)
-					: entry.start + minutesToMs(expected);
+					: Math.max(entry.start + minutesToMs(expected), now);
 
 				result.push({
 					index,
@@ -208,8 +220,13 @@ export function project(input: ProjectionInput): Projection {
 				lastWake = estimatedEnd;
 				if (completed) lastCompletedWake = entry.end as number;
 			} else {
-				// Projected nap.
-				const start = lastWake + minutesToMs(windowMin);
+				// Projected nap. If the baby is awake past this (the current) wake window,
+				// grow it to now so the nap projects from the present, not a lapsed
+				// estimate — the awake mirror of an over-running in-progress nap. Only the
+				// first projected sleep can floor; the rest cascade from it into the future.
+				const rawStart = lastWake + minutesToMs(windowMin);
+				const start = floorAwake(rawStart);
+				const flexed = start > rawStart;
 				const end = start + minutesToMs(expectedNapDurations[index]);
 				result.push({
 					index,
@@ -219,8 +236,8 @@ export function project(input: ProjectionInput): Projection {
 					end: null,
 					projectedEnd: end,
 					durationMin: null,
-					wakeWindowBeforeMin: windowMin,
-					wakeWindowReduced: reduced,
+					wakeWindowBeforeMin: flexed ? Math.round(msToMinutes(start - lastWake)) : windowMin,
+					wakeWindowReduced: flexed ? false : reduced,
 					tooShort: false
 				});
 				lastWake = end;
@@ -265,16 +282,20 @@ export function project(input: ProjectionInput): Projection {
 			if (!completed) asleepEntry = nightEntry;
 			if (completed) lastCompletedWake = nightEntry.end as number;
 		} else {
+			// Awake past bedtime's window (no naps left): grow the final window to now.
+			const rawStart = lastWake + minutesToMs(bedWindow);
+			const start = floorAwake(rawStart);
+			const flexed = start > rawStart;
 			result.push({
 				index: bedIndex,
 				type: 'night',
 				status: 'projected',
-				start: lastWake + minutesToMs(bedWindow),
+				start,
 				end: null,
 				projectedEnd: null,
 				durationMin: null,
-				wakeWindowBeforeMin: bedWindow,
-				wakeWindowReduced: bedReduced,
+				wakeWindowBeforeMin: flexed ? Math.round(msToMinutes(start - lastWake)) : bedWindow,
+				wakeWindowReduced: flexed ? false : bedReduced,
 				tooShort: false
 			});
 		}
@@ -293,7 +314,12 @@ export function project(input: ProjectionInput): Projection {
 			// Naps past the plan have no template duration; fall back to the last.
 			const expected =
 				expectedNapDurations[index] ?? expectedNapDurations[expectedNapDurations.length - 1] ?? 60;
-			const estimatedEnd = completed ? (entry.end as number) : entry.start + minutesToMs(expected);
+			// An in-progress nap ends no earlier than now: once it runs past its
+			// expected duration, grow its block to the current moment (as if logged
+			// with end = now) so the cascade continues from a real wake.
+			const estimatedEnd = completed
+				? (entry.end as number)
+				: Math.max(entry.start + minutesToMs(expected), now);
 
 			result.push({
 				index,
@@ -367,7 +393,11 @@ export function project(input: ProjectionInput): Projection {
 		for (let j = 0; j < solved.napValues.length; j++) {
 			const windowMin = Math.round(solved.windowValues[j]);
 			const napMin = Math.round(solved.napValues[j]);
-			const start = cursor + minutesToMs(windowMin);
+			// Grow the active (current) awake window to now when the baby is awake past
+			// it; later windows sit in the future, so their floor is a no-op.
+			const rawStart = cursor + minutesToMs(windowMin);
+			const start = floorAwake(rawStart);
+			const flexed = start > rawStart;
 			const end = start + minutesToMs(napMin);
 			result.push({
 				index: index++,
@@ -377,8 +407,8 @@ export function project(input: ProjectionInput): Projection {
 				end: null,
 				projectedEnd: end,
 				durationMin: null,
-				wakeWindowBeforeMin: windowMin,
-				wakeWindowReduced: solved.windows[j].reduced,
+				wakeWindowBeforeMin: flexed ? Math.round(msToMinutes(start - cursor)) : windowMin,
+				wakeWindowReduced: flexed ? false : solved.windows[j].reduced,
 				tooShort: false
 			});
 			cursor = end;
@@ -386,16 +416,19 @@ export function project(input: ProjectionInput): Projection {
 		// Final (pre-bed) window leads into the projected night.
 		const lastIdx = solved.windowValues.length - 1;
 		const bedWindow = Math.round(solved.windowValues[lastIdx]);
+		const rawBedStart = cursor + minutesToMs(bedWindow);
+		const bedStart = floorAwake(rawBedStart);
+		const bedFlexed = bedStart > rawBedStart;
 		result.push({
 			index,
 			type: 'night',
 			status: 'projected',
-			start: cursor + minutesToMs(bedWindow),
+			start: bedStart,
 			end: null,
 			projectedEnd: null,
 			durationMin: null,
-			wakeWindowBeforeMin: bedWindow,
-			wakeWindowReduced: solved.windows[lastIdx].reduced,
+			wakeWindowBeforeMin: bedFlexed ? Math.round(msToMinutes(bedStart - cursor)) : bedWindow,
+			wakeWindowReduced: bedFlexed ? false : solved.windows[lastIdx].reduced,
 			tooShort: false
 		});
 	}

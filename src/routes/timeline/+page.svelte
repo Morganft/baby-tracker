@@ -243,11 +243,15 @@
 	// it's logged / the day is over).
 	const editable = $derived(sleeps.some((s) => s.type === 'night' && s.status === 'projected'));
 	// Where the projected tail begins: the end of the last fixed sleep, else the anchor.
+	// An in-progress (over-running) nap is assumed to end now, so the tail after it
+	// starts at the live now-line — matching that nap's block grown to now — instead of
+	// a lapsed server estimate that would leave the tail floating above the now-line.
 	const lastWake = $derived.by(() => {
 		const done = sleeps.filter((s) => s.status !== 'projected');
 		if (done.length === 0) return data.projection.anchor;
 		const last = done[done.length - 1];
-		return last.projectedEnd ?? last.end ?? last.start;
+		const wake = last.projectedEnd ?? last.end ?? last.start;
+		return data.isToday && last.status === 'in-progress' ? Math.max(wake, nowMs) : wake;
 	});
 
 	// The editable template's tail as plain arrays (minutes). Seeded once, re-seeded
@@ -299,17 +303,25 @@
 		}[] = [];
 		if (!editable) return { blocks, bedStart: lastWake };
 		let cursor = lastWake;
+		// The first awake block is the one we're living through now: if the baby is
+		// awake past its planned window, grow it to the live now-line (the awake mirror
+		// of an over-running nap) and let the rest of the tail cascade from there. Later
+		// windows sit in the future, so their floor is a no-op.
+		let first = data.isToday;
+		const awake = (idx: number, planned: number) => {
+			let end = cursor + planned * MS;
+			if (first) end = Math.max(end, nowMs);
+			first = false;
+			blocks.push({ kind: 'awake', idx, start: cursor, end, min: Math.round((end - cursor) / MS) });
+			cursor = end;
+		};
 		for (let i = loggedNaps; i < f.napCount; i++) {
-			const w = f.wins[i] ?? 0;
-			blocks.push({ kind: 'awake', idx: i, start: cursor, end: cursor + w * MS, min: w });
-			cursor += w * MS;
+			awake(i, f.wins[i] ?? 0);
 			const d = f.naps[i] ?? 0;
 			blocks.push({ kind: 'nap', idx: i, start: cursor, end: cursor + d * MS, min: d });
 			cursor += d * MS;
 		}
-		const wl = f.wins[f.napCount] ?? 0;
-		blocks.push({ kind: 'awake', idx: f.napCount, start: cursor, end: cursor + wl * MS, min: wl });
-		cursor += wl * MS;
+		awake(f.napCount, f.wins[f.napCount] ?? 0);
 		return { blocks, bedStart: cursor };
 	});
 
@@ -680,7 +692,13 @@
 						<span class="block truncate text-xs opacity-70">{time(s.start)}</span>
 					</button>
 				{:else}
-					{@const end = s.projectedEnd ?? s.start}
+					<!-- An in-progress nap that has out-run its estimate grows to the live
+					     now-line, as if logged with end = now, so no phantom awake gap opens
+					     between reloads while the baby is still asleep. -->
+					{@const end =
+						s.status === 'in-progress' && data.isToday
+							? Math.max(s.projectedEnd ?? s.start, nowMs)
+							: (s.projectedEnd ?? s.start)}
 					{@const h = Math.max(pos(end) - top, MIN_BLOCK_PX)}
 					<button
 						type="button"
