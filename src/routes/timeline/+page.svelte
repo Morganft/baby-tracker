@@ -417,6 +417,10 @@
 	type DragSpec = { type: 'nap-move'; index: number } | { type: 'bedtime' };
 	let movingSpec = $state<DragSpec | null>(null);
 	let suppressClick = false;
+	// Which block just finished a drag: plays the release "squeeze" once, then clears.
+	let squeezeKey = $state<string | null>(null);
+	let squeezeTimer: ReturnType<typeof setTimeout> | undefined;
+	const specKey = (s: DragSpec) => (s.type === 'bedtime' ? 'bedtime' : `nap-${s.index}`);
 	function movable(node: HTMLElement, initial: { spec: DragSpec }) {
 		let spec = initial.spec;
 		let pointerId = -1;
@@ -472,6 +476,9 @@
 		const arm = () => {
 			armed = true;
 			moved = false;
+			// Cancel any in-flight release squeeze so a fresh grab lifts cleanly.
+			squeezeKey = null;
+			clearTimeout(squeezeTimer);
 			capture();
 			movingSpec = spec;
 		};
@@ -520,6 +527,10 @@
 			if (moved) {
 				suppressClick = true;
 				setTimeout(() => (suppressClick = false), 0);
+				// Fire the release squeeze on the block that was actually dragged.
+				squeezeKey = specKey(spec);
+				clearTimeout(squeezeTimer);
+				squeezeTimer = setTimeout(() => (squeezeKey = null), 340);
 			}
 			armed = false;
 			movingSpec = null;
@@ -713,7 +724,7 @@
 					<button
 						type="button"
 						onclick={() => openSleep(s)}
-						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-indigo-500/40 bg-indigo-500/25 px-3 text-left transition active:scale-[0.99]"
+						class="absolute right-0 left-14 flex flex-col justify-start overflow-hidden rounded-lg border border-indigo-500/40 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 text-left transition active:scale-[0.99]"
 						style="top: {top}px; height: {MIN_BLOCK_PX}px"
 					>
 						<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
@@ -782,9 +793,9 @@
 						onclick={() => {
 							if (!suppressClick) openTailNap(b);
 						}}
-						class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-center overflow-hidden rounded-lg border border-dashed border-indigo-400/60 bg-indigo-400/[0.12] px-3 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {moving
-							? 'z-10 cursor-grabbing ring-2 ring-indigo-500'
-							: ''}"
+						class="absolute right-0 left-14 flex touch-pan-y transform-gpu cursor-grab flex-col justify-center overflow-hidden rounded-lg border border-dashed border-indigo-400/60 bg-indigo-400/[0.12] px-3 pr-9 text-left transition-transform select-none hover:ring-2 hover:ring-indigo-400/40 {moving
+							? 'z-10 cursor-grabbing tl-lift shadow-lg ring-2 ring-indigo-500'
+							: ''} {squeezeKey === `nap-${b.idx}` ? 'tl-squeeze' : ''}"
 						style="top: {top}px; height: {h}px"
 					>
 						<span class="truncate text-sm font-medium">
@@ -859,10 +870,10 @@
 				onclick={() => {
 					if (!suppressClick) openTailBed();
 				}}
-				class="absolute right-0 left-14 flex touch-pan-y cursor-grab flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {movingSpec?.type ===
+				class="absolute right-0 left-14 flex origin-top transform-gpu touch-pan-y cursor-grab flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-dashed border-indigo-400/60 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 text-left transition-transform select-none hover:ring-2 hover:ring-indigo-400/40 {movingSpec?.type ===
 				'bedtime'
-					? 'ring-2 ring-indigo-500'
-					: ''}"
+					? 'z-10 tl-lift shadow-xl ring-2 ring-indigo-500'
+					: ''} {squeezeKey === 'bedtime' ? 'tl-squeeze' : ''}"
 				style="top: {bedTop}px; height: {Math.max(pos(bounds.end) - bedTop, MIN_BLOCK_PX)}px"
 			>
 				<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">

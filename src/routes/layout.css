@@ -20,3 +20,36 @@ body {
 		color: #e2e8f0;
 	}
 }
+
+/* Dragging a timeline block: it lifts (scales up) while held, then springs back
+   with a brief squash when dropped — a tactile "picked up / let go" cue. */
+.tl-lift {
+	transform: scale(1.03);
+}
+
+@keyframes tl-squeeze {
+	0% {
+		transform: scale(1.03);
+	}
+	45% {
+		transform: scale(0.96);
+	}
+	72% {
+		transform: scale(1.012);
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+
+.tl-squeeze {
+	animation: tl-squeeze 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tl-lift,
+	.tl-squeeze {
+		transform: none;
+		animation: none;
+	}
+}
