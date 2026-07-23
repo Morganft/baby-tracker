@@ -15,7 +15,7 @@ import {
 	type ActiveTemplateDTO
 } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
-import { getPlanAdvice } from '$lib/server/queries/planAdvice';
+import { getPlanAdvice, PLAN_ADVICE_WINDOW_DAYS } from '$lib/server/queries/planAdvice';
 import { parseTemplate, resolveDisplayZone, type TemplateInput } from '$lib/server/api/validate';
 import { fail, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -23,15 +23,25 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ cookies }) => {
 	const timeZone = resolveDisplayZone(cookies.get('tz'));
 	const settings = getSettings();
+	// Data-driven suggestions for the active plan (last ~2 weeks). Read-only here;
+	// applying one goes through the `applyAdvice` action, which re-derives them.
+	// Suppressed entirely when the advice system is switched off in settings.
+	const advice = settings.adviceEnabled ? getPlanAdvice(Date.now(), timeZone) : null;
 	return {
 		active: getActiveTemplate(),
 		library: listTemplates(),
 		// Reference-preview honours the 12/24h display preference like the other views.
 		clock24h: settings.clock24h,
-		// Data-driven suggestions for the active plan (last ~2 weeks). Read-only here;
-		// applying one goes through the `applyAdvice` action, which re-derives them.
-		// Suppressed entirely when the advice system is switched off in settings.
-		planAdvice: settings.adviceEnabled ? getPlanAdvice(Date.now(), timeZone).advice : []
+		planAdvice: advice?.advice ?? [],
+		// How much of the analysis window is actually filled with logged days, so the
+		// UI can show a "still collecting data" progress bar (advice is less reliable
+		// on a thin history). Null when advice is switched off.
+		adviceProgress: advice
+			? {
+					filled: Math.min(advice.dayCount, PLAN_ADVICE_WINDOW_DAYS),
+					target: PLAN_ADVICE_WINDOW_DAYS
+				}
+			: null
 	};
 };
 

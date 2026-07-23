@@ -65,6 +65,9 @@ const data = (over: Partial<PageData> = {}): PageData =>
 		library: [],
 		clock24h: true,
 		planAdvice: [],
+		// Advice enabled with a full 14-day history is the common case (advice shows
+		// directly). Tests exercising the collecting/disabled states override this.
+		adviceProgress: { filled: 14, target: 14 },
 		...over
 	}) as unknown as PageData;
 
@@ -130,5 +133,70 @@ describe('Planning-advice panel', () => {
 		});
 		const panel = document.querySelector('[data-testid="plan-advice"]')!;
 		expect(panel.querySelector('form[action="?/applyAdvice"]')).toBeNull();
+	});
+});
+
+describe('Advice data-collection progress', () => {
+	const advice = (over: Record<string, unknown> = {}) => ({
+		id: 'nap-count',
+		severity: 'warn' as const,
+		confidence: 'medium' as const,
+		title: 'Switch the plan to 2 naps',
+		detail: "You've been doing 2 naps a day, but the plan is built for 3.",
+		patch: { napCount: 2 },
+		...over
+	});
+
+	it('shows a progress bar and hides advice behind a button when fewer than 14 days are filled', async () => {
+		render(Page, {
+			props: {
+				data: data({
+					planAdvice: [advice()],
+					adviceProgress: { filled: 6, target: 14 }
+				} as Partial<PageData>),
+				form: null
+			}
+		});
+
+		const progress = document.querySelector('[data-testid="advice-progress"]')!;
+		expect(progress).not.toBeNull();
+		expect(progress.textContent).toContain('6');
+		expect(progress.textContent).toContain('14');
+
+		// The advice itself is hidden until the button reveals it.
+		expect(document.querySelector('[data-testid="plan-advice"]')).toBeNull();
+
+		const reveal = document.querySelector<HTMLButtonElement>('[data-testid="show-advice"]')!;
+		expect(reveal).not.toBeNull();
+
+		await fireEvent.click(reveal);
+		const panel = document.querySelector('[data-testid="plan-advice"]')!;
+		expect(panel).not.toBeNull();
+		expect(panel.textContent).toContain('Switch the plan to 2 naps');
+	});
+
+	it('shows advice directly with no progress bar once 14 days are filled', () => {
+		render(Page, {
+			props: {
+				data: data({
+					planAdvice: [advice()],
+					adviceProgress: { filled: 14, target: 14 }
+				} as Partial<PageData>),
+				form: null
+			}
+		});
+		expect(document.querySelector('[data-testid="advice-progress"]')).toBeNull();
+		expect(document.querySelector('[data-testid="plan-advice"]')).not.toBeNull();
+	});
+
+	it('renders nothing when advice is disabled', () => {
+		render(Page, {
+			props: {
+				data: data({ planAdvice: [], adviceProgress: null } as Partial<PageData>),
+				form: null
+			}
+		});
+		expect(document.querySelector('[data-testid="advice-progress"]')).toBeNull();
+		expect(document.querySelector('[data-testid="plan-advice"]')).toBeNull();
 	});
 });

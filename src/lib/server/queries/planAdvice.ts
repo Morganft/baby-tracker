@@ -12,7 +12,10 @@ import { localDateKey, shiftDateKey } from './day';
 import { ageMonthsFromBirthDate } from '$lib/advice/reference';
 import { analysePlan, type PlanAdviceResult } from '$lib/advice/analyse';
 
-const DEFAULT_WINDOW_DAYS = 14;
+/** Calendar days of prior history the planning advice analyses (and the target
+ *  the data-collection progress indicator fills toward). */
+export const PLAN_ADVICE_WINDOW_DAYS = 14;
+const DEFAULT_WINDOW_DAYS = PLAN_ADVICE_WINDOW_DAYS;
 
 /**
  * Compute planning advice as of `now` in `timeZone`. Analyses the `windowDays`

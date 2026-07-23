@@ -9,6 +9,15 @@
 	const active = $derived(data.active);
 	const library = $derived(data.library);
 
+	// Advice is derived from the trailing 14-day window. While that window is still
+	// filling up the advice is less reliable, so we show a data-collection progress
+	// bar and keep the suggestions behind a "show anyway" reveal.
+	const adviceProgress = $derived(data.adviceProgress);
+	const collectingData = $derived(
+		adviceProgress != null && adviceProgress.filled < adviceProgress.target
+	);
+	let showEarlyAdvice = $state(false);
+
 	const inputClass =
 		'mt-1 block w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20';
 
@@ -610,7 +619,7 @@
 		</p>
 	{/if}
 
-	{#if data.planAdvice.length > 0}
+	{#snippet adviceCards()}
 		<div
 			class="space-y-2 rounded-2xl border border-black/10 p-4 dark:border-white/10"
 			data-testid="plan-advice"
@@ -621,6 +630,9 @@
 					From the last two weeks of logs. Age ranges are guidance, not rules.
 				</p>
 			</div>
+			{#if data.planAdvice.length === 0}
+				<p class="text-xs opacity-60">No suggestions right now — the plan matches your logs.</p>
+			{/if}
 			{#each data.planAdvice as a (a.id)}
 				<div
 					class="rounded-xl border px-3 py-2.5 {a.severity === 'warn'
@@ -653,6 +665,49 @@
 				</div>
 			{/each}
 		</div>
+	{/snippet}
+
+	{#if collectingData && adviceProgress}
+		<!-- Still building up the 14-day history: show progress, keep advice behind a reveal. -->
+		<div
+			class="space-y-3 rounded-2xl border border-black/10 p-4 dark:border-white/10"
+			data-testid="advice-progress"
+		>
+			<div>
+				<h3 class="text-sm font-semibold">Advice</h3>
+				<p class="text-xs opacity-60">
+					Collecting data — tracked {adviceProgress.filled} of {adviceProgress.target} days. Advice gets
+					more reliable as this fills up.
+				</p>
+			</div>
+			<div
+				class="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10"
+				role="progressbar"
+				aria-valuenow={adviceProgress.filled}
+				aria-valuemin={0}
+				aria-valuemax={adviceProgress.target}
+				aria-label="Days of history collected"
+			>
+				<div
+					class="h-full rounded-full bg-indigo-500 transition-all"
+					style="width: {(adviceProgress.filled / adviceProgress.target) * 100}%"
+				></div>
+			</div>
+			{#if showEarlyAdvice}
+				{@render adviceCards()}
+			{:else}
+				<button
+					type="button"
+					data-testid="show-advice"
+					onclick={() => (showEarlyAdvice = true)}
+					class="rounded-lg border border-indigo-500/40 px-3 py-1.5 text-xs font-medium text-indigo-600 active:scale-95 dark:text-indigo-400"
+				>
+					Show advice anyway
+				</button>
+			{/if}
+		</div>
+	{:else if adviceProgress && data.planAdvice.length > 0}
+		{@render adviceCards()}
 	{/if}
 
 	<div class="flex flex-col gap-6 lg:flex-row lg:items-start">
