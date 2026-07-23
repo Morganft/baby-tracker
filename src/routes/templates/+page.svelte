@@ -263,6 +263,10 @@
 	// --- Timeline geometry (vertical, minutes → pixels, like the Today view) ---
 	const TOP_PAD = 30; // overnight cap above the wake anchor
 	const BOTTOM_PAD = 44; // room for the open-ended bedtime block
+	const MIN_BED_PX = 34; // bedtime cap won't compress past this; the wrapper grows instead
+	// Elastic drag: while the bedtime cap is held its bottom edge stays pinned, so the
+	// block stretches; on release it springs back to size with a slight squeeze.
+	const SPRING_EASE = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
 	const PX_PER_MIN = 1.2;
 	/** y-pixel of a minutes-from-wake offset (top of container = wake − TOP_PAD). */
 	const y = (minFromWake: number) => (TOP_PAD + minFromWake) * PX_PER_MIN;
@@ -444,6 +448,12 @@
 		| { type: 'bedtime' };
 	let movingSpec = $state<DragSpec | null>(null);
 	let suppressClick = false;
+	// Which block just finished a drag: plays the release "squeeze" once, then clears.
+	let squeezeKey = $state<string | null>(null);
+	let squeezeTimer: ReturnType<typeof setTimeout> | undefined;
+	const specKey = (s: DragSpec) => (s.type === 'nap-move' ? `nap-${s.index}` : s.type);
+	// While the bedtime cap is dragged, the y-pixel its bottom edge is pinned to.
+	let bedElasticBottom = $state<number | null>(null);
 	function movable(node: HTMLElement, initial: { spec: DragSpec }) {
 		let spec = initial.spec;
 		let pointerId = -1;
@@ -494,8 +504,14 @@
 		const arm = () => {
 			armed = true;
 			moved = false;
+			// Cancel any in-flight release squeeze so a fresh grab starts clean.
+			squeezeKey = null;
+			clearTimeout(squeezeTimer);
 			capture();
 			movingSpec = spec;
+			// Pin the bedtime cap's bottom edge where it was grabbed, so the block
+			// stretches (rather than translating) while the top edge follows the drag.
+			if (spec.type === 'bedtime' && plan.ok) bedElasticBottom = y(plan.bedMin) + BOTTOM_PAD;
 			if ('vibrate' in navigator) navigator.vibrate(8);
 		};
 		const onDown = (e: PointerEvent) => {
@@ -550,9 +566,14 @@
 			if (moved) {
 				suppressClick = true; // the following click is the drag's tail — swallow it
 				setTimeout(() => (suppressClick = false), 0);
+				// Fire the release squeeze on the block that was actually dragged.
+				squeezeKey = specKey(spec);
+				clearTimeout(squeezeTimer);
+				squeezeTimer = setTimeout(() => (squeezeKey = null), 340);
 			}
 			armed = false;
 			movingSpec = null;
+			bedElasticBottom = null; // un-pin → the cap springs back to its natural size
 			try {
 				node.releasePointerCapture(e.pointerId);
 			} catch {
@@ -757,7 +778,14 @@
 						{/each}
 					</ul>
 				{:else}
-					<div class="relative" style="height: {y(plan.bedMin) + BOTTOM_PAD}px">
+					<div
+						class="relative"
+						style="height: {movingSpec?.type === 'bedtime' && bedElasticBottom !== null
+							? Math.max(bedElasticBottom, y(plan.bedMin) + MIN_BED_PX)
+							: y(plan.bedMin) + BOTTOM_PAD}px; {squeezeKey === 'bedtime'
+							? `transition: height 340ms ${SPRING_EASE};`
+							: ''}"
+					>
 						<!-- Hour gridlines -->
 						{#each grid as g (g.m)}
 							<div class="absolute inset-x-0 flex items-center" style="top: {y(g.m)}px">
@@ -778,7 +806,9 @@
 							}}
 							class="absolute right-0 left-14 flex touch-pan-y flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/20 px-3 pb-1.5 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {locks.wake
 								? 'cursor-pointer ring-1 ring-amber-500/70'
-								: 'cursor-grab'} {movingSpec?.type === 'day-start' ? 'ring-2 ring-indigo-500' : ''}"
+								: 'cursor-grab'} {movingSpec?.type === 'day-start'
+								? 'z-10 ring-2 ring-indigo-500'
+								: ''}"
 							style="top: 0; height: {y(0)}px"
 						>
 							<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
@@ -880,8 +910,15 @@
 							}}
 							class="absolute right-0 left-14 flex touch-pan-y flex-col justify-start overflow-hidden rounded-t-lg border border-b-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/25 to-indigo-500/[0.04] px-3 pt-1.5 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {locks.bed
 								? 'cursor-pointer ring-1 ring-amber-500/70'
-								: 'cursor-grab'} {movingSpec?.type === 'bedtime' ? 'ring-2 ring-indigo-500' : ''}"
-							style="top: {y(plan.bedMin)}px; height: {BOTTOM_PAD}px"
+								: 'cursor-grab'} {movingSpec?.type === 'bedtime'
+								? 'z-10 shadow-xl ring-2 ring-indigo-500'
+								: ''}"
+							style="top: {y(plan.bedMin)}px; height: {movingSpec?.type === 'bedtime' &&
+							bedElasticBottom !== null
+								? Math.max(bedElasticBottom - y(plan.bedMin), MIN_BED_PX)
+								: BOTTOM_PAD}px; {squeezeKey === 'bedtime'
+								? `transition: height 340ms ${SPRING_EASE};`
+								: ''}"
 						>
 							<p class="truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
 								🌙 Bedtime {plan.bedClock}
