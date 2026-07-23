@@ -9,6 +9,7 @@
  * severity × confidence (most actionable first).
  */
 import type { TemplateInput } from '$lib/server/api/validate';
+import { planBedtime } from '$lib/projection/planBedtime';
 import type { AgeReference } from './reference';
 import type { PlanStats, PlanAdvice } from './types';
 
@@ -148,7 +149,12 @@ export function advisePlan(
 	}
 
 	// Rule 4 — bedtime floating late (informational).
-	const planBed = template.targetBedtime ?? template.bedtimeStart;
+	// Compare against the plan's *cascaded* bedtime (reference wake + wake windows +
+	// nap durations) — the same bedtime the UI draws and the projection steers toward —
+	// not the reference-only `bedtimeStart`, a stale legacy field the editor no longer sets.
+	const planBed =
+		template.targetBedtime ??
+		planBedtime(template.referenceWakeTime, template.wakeWindows, template.expectedNapDurations);
 	if (enoughDays && stats.bedtimeMedian != null && planBed) {
 		const drift = stats.bedtimeMedian - hhmmToMin(planBed);
 		if (drift > BEDTIME_TOL) {

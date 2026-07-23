@@ -142,4 +142,24 @@ describe('advisePlan', () => {
 		expect(advice.some((a) => a.id === 'nap-count')).toBe(true);
 		expect(advice.some((a) => a.id === 'nap-transition')).toBe(false);
 	});
+
+	// Rule 4 measures drift against the plan's *cascaded* bedtime (reference wake +
+	// wake windows + nap durations = 07:00 + 570 + 195 = 19:45), NOT the reference-only
+	// `bedtimeStart`, which real plans no longer set (it stays a stale legacy value).
+	const shapedPlan: TemplateInput = { ...template, targetBedtime: null, bedtimeStart: '19:00' };
+
+	it('measures bedtime drift against the cascaded plan bedtime, not bedtimeStart', () => {
+		// Actual 19:50 is only 5 min past the cascaded 19:45 → within tolerance, silent —
+		// even though it is 50 min past the stale bedtimeStart the old rule read.
+		const stats = neutralStats({ bedtimeMedian: 19 * 60 + 50 });
+		expect(advisePlan(stats, shapedPlan).some((a) => a.id === 'bedtime-late')).toBe(false);
+	});
+
+	it('flags a late bedtime and quotes the cascaded plan bedtime', () => {
+		const stats = neutralStats({ bedtimeMedian: 20 * 60 + 30 }); // 45 min past 19:45
+		const advice = advisePlan(stats, shapedPlan).find((a) => a.id === 'bedtime-late');
+		expect(advice).toBeDefined();
+		expect(advice?.detail).toContain('19:45'); // planned, from the plan's shape
+		expect(advice?.detail).toContain('20:30'); // actual median
+	});
 });
