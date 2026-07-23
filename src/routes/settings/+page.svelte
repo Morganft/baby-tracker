@@ -79,22 +79,6 @@
 		<div
 			class="space-y-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
 		>
-			<div>
-				<label class="block text-sm font-medium" for="dayStartTime">Day start time</label>
-				<p class="mb-2 text-xs opacity-60">
-					Fallback start-of-day used only when the active plan has no reference wake time. The
-					plan’s own wake time takes precedence for anchoring the projection.
-				</p>
-				<input
-					id="dayStartTime"
-					type="time"
-					name="dayStartTime"
-					value={s.dayStartTime}
-					required
-					class="w-32 rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
-				/>
-			</div>
-
 			<label class="flex items-center justify-between gap-3">
 				<span>
 					<span class="block text-sm font-medium">24-hour clock</span>

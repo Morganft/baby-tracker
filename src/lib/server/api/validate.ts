@@ -284,7 +284,6 @@ export interface SettingsUpdate {
 	shortNapThresholdMin?: number;
 	shortNapReductionPercent?: number;
 	clock24h?: boolean;
-	dayStartTime?: string;
 	adviceEnabled?: boolean;
 }
 
@@ -306,12 +305,6 @@ export function parseSettingsUpdate(body: unknown): SettingsUpdate {
 	}
 	if ('clock24h' in b) out.clock24h = bool(b.clock24h, 'clock24h');
 	if ('adviceEnabled' in b) out.adviceEnabled = bool(b.adviceEnabled, 'adviceEnabled');
-	if ('dayStartTime' in b) {
-		if (typeof b.dayStartTime !== 'string' || !HHMM.test(b.dayStartTime)) {
-			throw error(400, "dayStartTime must be 'HH:MM'");
-		}
-		out.dayStartTime = b.dayStartTime;
-	}
 	if (Object.keys(out).length === 0) throw error(400, 'No updatable fields provided');
 	return out;
 }

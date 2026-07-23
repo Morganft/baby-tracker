@@ -50,7 +50,7 @@ describe('analysePlan', () => {
 			dayKeys: sixDayKeys,
 			timeZone: 'UTC',
 			shortNapThresholdMin: 30,
-			dayStartTime: '07:00',
+			morningAnchor: '07:00',
 			template
 		});
 		expect(result.dayCount).toBe(6);
@@ -68,7 +68,7 @@ describe('analysePlan', () => {
 			dayKeys: sixDayKeys,
 			timeZone: 'UTC',
 			shortNapThresholdMin: 30,
-			dayStartTime: '07:00',
+			morningAnchor: '07:00',
 			template
 		});
 		expect(result.dayCount).toBe(6);
@@ -80,7 +80,7 @@ describe('analysePlan', () => {
 			dayKeys: sixDayKeys,
 			timeZone: 'UTC',
 			shortNapThresholdMin: 30,
-			dayStartTime: '07:00',
+			morningAnchor: '07:00',
 			template
 		};
 		const withoutAge = analysePlan(base);
@@ -95,7 +95,7 @@ describe('analysePlan', () => {
 			dayKeys: sixDayKeys,
 			timeZone: 'UTC',
 			shortNapThresholdMin: 30,
-			dayStartTime: '07:00',
+			morningAnchor: '07:00',
 			template
 		});
 		expect(result.dayCount).toBe(0);

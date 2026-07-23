@@ -120,11 +120,11 @@ export const load: PageServerLoad = ({ cookies, url }) => {
 	// Past day: only that day's actual logged sleeps, as completed blocks. No
 	// projected tail, now-line, inline editor, or overlay — those are live-only.
 	const grouping = assembleDayForKey(view.viewedDayKey, timeZone);
-	// The morning reference for the viewed day (the plan's own wake time, else the
-	// global day-start) — the anchor fallback when no morning wake and no nap are
-	// logged, so a bedtime-only (or empty) day lays out around its morning, not
-	// epoch 0 or the bedtime itself. Falls back to local midnight if malformed.
-	const refWake = template.referenceWakeTime || settings.dayStartTime;
+	// The morning reference for the viewed day (the plan's own wake time) — the
+	// anchor fallback when no morning wake and no nap are logged, so a bedtime-only
+	// (or empty) day lays out around its morning, not epoch 0 or the bedtime itself.
+	// Falls back to local midnight if malformed.
+	const refWake = template.referenceWakeTime;
 	const fallbackAnchor = resolveLocalDateTime(
 		`${view.viewedDayKey}T${refWake || '00:00'}`,
 		timeZone

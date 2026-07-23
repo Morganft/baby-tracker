@@ -1,6 +1,6 @@
 /**
  * Settings: the single global preferences row (short-nap rule, clock format,
- * day start). All limits are reference/guidance only.
+ * advice toggle). All limits are reference/guidance only.
  */
 import { getSettings, updateSettings } from '$lib/server/queries/settings';
 import { getBaby, updateBaby } from '$lib/server/queries/baby';
@@ -22,7 +22,6 @@ export const actions: Actions = {
 			const settingsPatch = parseSettingsUpdate({
 				shortNapThresholdMin: num(b.get('shortNapThresholdMin')),
 				shortNapReductionPercent: num(b.get('shortNapReductionPercent')),
-				dayStartTime: String(b.get('dayStartTime') ?? ''),
 				// Unchecked checkboxes are absent from the form data.
 				clock24h: b.get('clock24h') === 'on',
 				adviceEnabled: b.get('adviceEnabled') === 'on'

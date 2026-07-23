@@ -79,8 +79,7 @@ A template defines a day's plan (no age association — chosen manually):
 
 - `name`
 - `reference_wake_time` — target morning wake time. The live projection **anchors
-  on this field** before an actual morning wake is logged; the global
-  `day_start_time` setting (§ Settings) is only a fallback when it is unset.
+  on this field** before an actual morning wake is logged.
 - `nap_count`
 - `wake_windows[]` — ordered **relative** awake durations before each sleep
   (`WW1`, `WW2`, …, and the pre-bed window). Each can differ; they typically
@@ -121,9 +120,6 @@ A template defines a day's plan (no age association — chosen manually):
 - `short_nap_threshold` — default **15 min**
 - `short_nap_reduction_percent` — **configurable**; how much to shorten the next
   wake window after a too-short nap
-- `day_start_time` — `'HH:MM'`; a **fallback** morning anchor used only when the
-  active plan carries no `reference_wake_time` (default **07:00**). The plan's own
-  `reference_wake_time` takes precedence for anchoring the projection.
 - Clock format (12/24h, default 24h) and similar display prefs.
 
 ---
@@ -134,9 +130,8 @@ The day is **relative**: a cascade of wake windows measured forward from the
 most recent wake-up.
 
 1. **Anchor.** Before the first actual wake-up, the day is anchored to the active
-   plan's `reference_wake_time` (falling back to the global `day_start_time`
-   setting when unset). Once the real morning wake is logged, the day re-anchors
-   to the **actual** time.
+   plan's `reference_wake_time`. Once the real morning wake is logged, the day
+   re-anchors to the **actual** time.
 2. **Re-project on every log, steering toward a soft target bedtime.** After each
    logged event (a wake-up, or a nap's actual end), the app re-projects **all
    remaining sleeps** so they steer toward the **plan's own bedtime** (the target

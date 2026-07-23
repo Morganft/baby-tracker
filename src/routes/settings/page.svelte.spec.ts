@@ -45,7 +45,6 @@ const settings = (over: Partial<SettingsDTO> = {}): SettingsDTO => ({
 	shortNapThresholdMin: 15,
 	shortNapReductionPercent: 30,
 	clock24h: true,
-	dayStartTime: '07:00',
 	adviceEnabled: true,
 	createdAt: 0,
 	updatedAt: 0,
@@ -73,14 +72,17 @@ describe('Settings form — fields survive a save', () => {
 		// Values shown before saving.
 		expect(input('shortNapThresholdMin').value).toBe('15');
 		expect(input('shortNapReductionPercent').value).toBe('30');
-		expect(input('dayStartTime').value).toBe('07:00');
 
 		await fireEvent.submit(saveForm);
 
 		// …and still shown after — the save must not blank the form.
 		expect(input('shortNapThresholdMin').value).toBe('15');
 		expect(input('shortNapReductionPercent').value).toBe('30');
-		expect(input('dayStartTime').value).toBe('07:00');
+	});
+
+	it('does not render a day-start-time field', () => {
+		render(Page, { props: { data: data(), form: null } });
+		expect(document.querySelector('input[name="dayStartTime"]')).toBeNull();
 	});
 
 	it('keeps values the caregiver just edited across the save', async () => {
@@ -88,11 +90,11 @@ describe('Settings form — fields survive a save', () => {
 		const saveForm = screen.getByRole('button', { name: 'Save settings' }).closest('form')!;
 
 		await fireEvent.input(input('shortNapThresholdMin'), { target: { value: '20' } });
-		await fireEvent.input(input('dayStartTime'), { target: { value: '06:30' } });
+		await fireEvent.input(input('shortNapReductionPercent'), { target: { value: '40' } });
 		await fireEvent.submit(saveForm);
 
 		expect(input('shortNapThresholdMin').value).toBe('20');
-		expect(input('dayStartTime').value).toBe('06:30');
+		expect(input('shortNapReductionPercent').value).toBe('40');
 	});
 
 	it('shows the baby birth date and keeps it across a save', async () => {

@@ -135,9 +135,6 @@ export const settings = sqliteTable('settings', {
 	shortNapThresholdMin: integer('short_nap_threshold_min').notNull().default(15),
 	shortNapReductionPercent: integer('short_nap_reduction_percent').notNull().default(30),
 	clock24h: integer('clock_24h', { mode: 'boolean' }).notNull().default(true),
-	// 'HH:MM' local: when the day (and the projection's default anchor) begins,
-	// used before an actual morning wake is logged. See projection query layer.
-	dayStartTime: text('day_start_time').notNull().default('07:00'),
 	// Master switch for the advice system (in-day nudges on Home + planning
 	// suggestions on /templates). On by default; off suppresses both.
 	adviceEnabled: integer('advice_enabled', { mode: 'boolean' }).notNull().default(true),

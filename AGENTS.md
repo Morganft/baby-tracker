@@ -108,8 +108,8 @@ runtime stage, so build and runtime must stay on the same Debian base.
   persistent row** — a freely-editable _copy_ that drives the daily projection.
   Editing the active slot must **never** mutate a library `template`; saving to
   the library is an explicit, separate action. There is no age-based selection.
-  The daily anchor is the global `day_start_time` setting (not a per-template
-  field); a template's `reference_wake_time` is library metadata only.
+  The daily anchor is the active plan's own `reference_wake_time` (before an
+  actual morning wake is logged); there is no global day-start setting.
 - **Projection engine (core).** Relative wake windows cascade forward from the
   last actual wake; every new log re-anchors and re-projects all remaining
   sleeps. When a template sets `target_bedtime`, the projected tail is

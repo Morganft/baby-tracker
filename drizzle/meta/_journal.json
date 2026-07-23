@@ -43,6 +43,13 @@
       "when": 1784787068572,
       "tag": "0005_broad_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784789528510,
+      "tag": "0006_lying_salo",
+      "breakpoints": true
     }
   ]
 }

@@ -50,7 +50,6 @@ function fullDump(): BackupDump {
 			shortNapThresholdMin: 15,
 			shortNapReductionPercent: 30,
 			clock24h: true,
-			dayStartTime: '07:00',
 			adviceEnabled: true,
 			createdAt: 1,
 			updatedAt: 2
@@ -111,7 +110,15 @@ describe('parseBackup', () => {
 		const parsed = parseBackup(d);
 		expect(parsed.sleepEntries[0].startTimezone).toBe('Europe/Prague');
 		expect(parsed.sleepEntries[0].endTimezone).toBeNull();
-		expect(parsed.settings?.dayStartTime).toBe('07:00');
+	});
+
+	it('ignores a stray `dayStartTime` from a pre-removal backup', () => {
+		const d = fullDump();
+		// Old exports carried a global day-start setting that no longer exists.
+		(d.settings as unknown as { dayStartTime: string }).dayStartTime = '06:15';
+		const parsed = parseBackup(d);
+		expect(parsed.settings).not.toBeNull();
+		expect('dayStartTime' in (parsed.settings ?? {})).toBe(false);
 	});
 
 	it('defaults missing collections to empty / null', () => {

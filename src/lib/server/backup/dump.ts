@@ -60,7 +60,6 @@ export interface SettingsDump {
 	shortNapThresholdMin: number;
 	shortNapReductionPercent: number;
 	clock24h: boolean;
-	dayStartTime: string;
 	adviceEnabled: boolean;
 	createdAt: number;
 	updatedAt: number;
@@ -198,8 +197,8 @@ function parseSettings(v: unknown): SettingsDump {
 			'settings.shortNapReductionPercent'
 		),
 		clock24h: bool(b.clock24h, 'settings.clock24h'),
-		// A legacy `trackTimezone` field (removed) is silently ignored if present.
-		dayStartTime: str(b.dayStartTime, 'settings.dayStartTime'),
+		// Legacy `trackTimezone` and `dayStartTime` fields (both removed) are silently
+		// ignored if present in an older backup.
 		// Added after v1; backups predating it default to advice-on.
 		adviceEnabled: b.adviceEnabled == null ? true : bool(b.adviceEnabled, 'settings.adviceEnabled'),
 		createdAt: epoch(b.createdAt, 'settings.createdAt'),

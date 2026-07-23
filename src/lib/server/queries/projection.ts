@@ -40,9 +40,8 @@ export function buildProjection(now: number, timeZone: string): Projection {
 		timeZone,
 		template: {
 			// The active plan's own wake time anchors the day before an actual morning
-			// wake is logged; the global day-start is only a fallback when the plan
-			// carries no reference wake time.
-			referenceWakeTime: template.referenceWakeTime || settings.dayStartTime,
+			// wake is logged.
+			referenceWakeTime: template.referenceWakeTime,
 			napCount: template.napCount,
 			wakeWindows: template.wakeWindows,
 			expectedNapDurations: template.expectedNapDurations,

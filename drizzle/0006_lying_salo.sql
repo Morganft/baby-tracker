@@ -1,0 +1,1 @@
+ALTER TABLE `settings` DROP COLUMN `day_start_time`;

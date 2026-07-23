@@ -16,26 +16,21 @@ import type { PlanStats, PlanAdvice } from './types';
 /**
  * Build a completed-day `Projection` for each `dayKey` from the shared entry list.
  * The fallback anchor (used only for a day with neither a logged morning wake nor
- * a nap) is a wall-clock 'HH:MM' — the caller passes the plan's own wake time,
- * falling back to the global day-start.
+ * a nap) is a wall-clock 'HH:MM' — the caller passes the plan's own wake time.
  */
 export function buildDayProjections(
 	entries: DayEntry[],
 	dayKeys: string[],
 	timeZone: string,
 	shortNapThresholdMin: number,
-	dayStartTime: string
+	morningAnchor: string
 ): Projection[] {
 	return dayKeys.map((key) => {
 		const grouping = groupDayForKey(entries, key, timeZone);
 		const [y, m, d] = key.split('-').map(Number);
 		// Midday of the target day is a stable reference for resolving the local
-		// day-start clock time regardless of the zone's UTC offset.
-		const fallbackAnchor = resolveClockTime(
-			dayStartTime || '07:00',
-			Date.UTC(y, m - 1, d, 12),
-			timeZone
-		);
+		// morning-anchor clock time regardless of the zone's UTC offset.
+		const fallbackAnchor = resolveClockTime(morningAnchor, Date.UTC(y, m - 1, d, 12), timeZone);
 		return completedProjection(grouping, shortNapThresholdMin, fallbackAnchor);
 	});
 }
@@ -52,7 +47,7 @@ export interface AnalysePlanParams {
 	dayKeys: string[];
 	timeZone: string;
 	shortNapThresholdMin: number;
-	dayStartTime: string;
+	morningAnchor: string;
 	template: TemplateInput;
 	/** Fractional age in months, or null when no birth date is set. */
 	ageMonths?: number | null;
@@ -64,7 +59,7 @@ export function analysePlan(params: AnalysePlanParams): PlanAdviceResult {
 		params.dayKeys,
 		params.timeZone,
 		params.shortNapThresholdMin,
-		params.dayStartTime
+		params.morningAnchor
 	);
 	const stats = computePlanStats(days, params.timeZone);
 	const ref = params.ageMonths != null ? referenceForAge(params.ageMonths) : null;
