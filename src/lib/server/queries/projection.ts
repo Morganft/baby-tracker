@@ -39,9 +39,10 @@ export function buildProjection(now: number, timeZone: string): Projection {
 		now,
 		timeZone,
 		template: {
-			// The global day-start time is the projection's default anchor before an
-			// actual morning wake is logged; it overrides the template's own value.
-			referenceWakeTime: settings.dayStartTime || template.referenceWakeTime,
+			// The active plan's own wake time anchors the day before an actual morning
+			// wake is logged; the global day-start is only a fallback when the plan
+			// carries no reference wake time.
+			referenceWakeTime: template.referenceWakeTime || settings.dayStartTime,
 			napCount: template.napCount,
 			wakeWindows: template.wakeWindows,
 			expectedNapDurations: template.expectedNapDurations,

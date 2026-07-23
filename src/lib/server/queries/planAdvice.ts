@@ -35,7 +35,9 @@ export function getPlanAdvice(
 		dayKeys,
 		timeZone,
 		shortNapThresholdMin: settings.shortNapThresholdMin,
-		dayStartTime: settings.dayStartTime,
+		// The plan's own wake time anchors an empty/bedtime-only historical day;
+		// the global day-start is only the fallback (mirrors the live projection).
+		dayStartTime: template.referenceWakeTime || settings.dayStartTime,
 		template,
 		ageMonths
 	});

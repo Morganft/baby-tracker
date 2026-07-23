@@ -82,8 +82,8 @@
 			<div>
 				<label class="block text-sm font-medium" for="dayStartTime">Day start time</label>
 				<p class="mb-2 text-xs opacity-60">
-					When the day begins. Used as the projection’s anchor until an actual morning wake is
-					logged.
+					Fallback start-of-day used only when the active plan has no reference wake time. The
+					plan’s own wake time takes precedence for anchoring the projection.
 				</p>
 				<input
 					id="dayStartTime"

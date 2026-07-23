@@ -16,7 +16,8 @@ import type { PlanStats, PlanAdvice } from './types';
 /**
  * Build a completed-day `Projection` for each `dayKey` from the shared entry list.
  * The fallback anchor (used only for a day with neither a logged morning wake nor
- * a nap) is that day's configured day-start clock time.
+ * a nap) is a wall-clock 'HH:MM' — the caller passes the plan's own wake time,
+ * falling back to the global day-start.
  */
 export function buildDayProjections(
 	entries: DayEntry[],
