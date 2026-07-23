@@ -825,7 +825,7 @@
 					</ul>
 				{:else}
 					<div
-						class="relative"
+						class="relative isolate"
 						style="height: {movingSpec?.type === 'bedtime' && bedElasticBottom !== null
 							? Math.max(bedElasticBottom, y(plan.bedMin) + MIN_BED_PX)
 							: y(plan.bedMin) + BOTTOM_PAD}px; {squeezeKey === 'bedtime'

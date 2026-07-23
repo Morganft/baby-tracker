@@ -625,7 +625,7 @@
 		>
 	</div>
 
-	<div class="relative" style="height: {height}px">
+	<div class="relative isolate" style="height: {height}px">
 		<!-- Hour gridlines + labels -->
 		{#each ticks as t (t)}
 			<div class="absolute inset-x-0 flex items-center" style="top: {pos(t)}px">
