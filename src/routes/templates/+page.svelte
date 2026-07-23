@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { Tween } from 'svelte/motion';
+	import { backOut } from 'svelte/easing';
 	import { enhance } from '$app/forms';
 	import { initHistory, commit, undo, redo, type History } from '$lib/timeline/history';
 	import type { PageData, ActionData } from './$types';
@@ -261,15 +263,51 @@
 	});
 
 	// --- Timeline geometry (vertical, minutes → pixels, like the Today view) ---
-	const TOP_PAD = 30; // overnight cap above the wake anchor
+	const PX_PER_MIN = 1.2;
+	// Shortest a rendered block may be so its two text rows stay legible. TOP_PAD is sized
+	// to hold the overnight (day-start) cap at this minimum too.
+	const MIN_BLOCK_PX = 40;
+	const TOP_PAD = Math.ceil(MIN_BLOCK_PX / PX_PER_MIN); // overnight cap above the wake anchor
 	const BOTTOM_PAD = 44; // room for the open-ended bedtime block
 	const MIN_BED_PX = 34; // bedtime cap won't compress past this; the wrapper grows instead
+	const MIN_DAY_PX = 24; // day-start cap won't compress past this when the wake line is pulled up
 	// Elastic drag: while the bedtime cap is held its bottom edge stays pinned, so the
 	// block stretches; on release it springs back to size with a slight squeeze.
 	const SPRING_EASE = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
-	const PX_PER_MIN = 1.2;
+
+	// Warped day axis: the day cascades at PX_PER_MIN, except any window or nap whose
+	// natural height would fall below MIN_BLOCK_PX is stretched up to it. Blocks are
+	// contiguous, so the control points are simply their shared edges. Because gridlines
+	// and every block read the same map, a stretched region just draws taller (its hour
+	// lines spread to match) — short blocks stay readable and never overlap the next.
+	const dayAxis = $derived.by(() => {
+		const edges = [0]; // minutes past wake at each block boundary
+		const offsets = [0]; // cumulative warped pixels at each edge
+		if (plan.ok)
+			for (const b of plan.blocks) {
+				const natural = (b.endMin - b.startMin) * PX_PER_MIN;
+				edges.push(b.endMin);
+				offsets.push(offsets[offsets.length - 1] + Math.max(natural, MIN_BLOCK_PX));
+			}
+		return { edges, offsets };
+	});
+	/** Warped pixels from the wake line to a minutes-past-wake offset (linear outside the day). */
+	const dayPos = (m: number): number => {
+		const { edges, offsets } = dayAxis;
+		const last = edges.length - 1;
+		if (m <= 0 || last < 1) return m * PX_PER_MIN; // overnight pad / no blocks yet → linear
+		if (m >= edges[last]) return offsets[last] + (m - edges[last]) * PX_PER_MIN; // bedtime tail
+		let i = 0;
+		while (i < last && edges[i + 1] <= m) i++;
+		return offsets[i] + ((offsets[i + 1] - offsets[i]) * (m - edges[i])) / (edges[i + 1] - edges[i]);
+	};
+	// While the day-start cap is dragged, the whole timeline slides down by this many
+	// pixels so the cap grows out of its top edge without colliding with the day below;
+	// on release it springs back to 0. Blocks, gridlines and the wrapper all read `y()`,
+	// so a single shared offset keeps everything aligned as it stretches.
+	const dayStretch = new Tween(0, { duration: 340, easing: backOut });
 	/** y-pixel of a minutes-from-wake offset (top of container = wake − TOP_PAD). */
-	const y = (minFromWake: number) => (TOP_PAD + minFromWake) * PX_PER_MIN;
+	const y = (minFromWake: number) => TOP_PAD * PX_PER_MIN + dayPos(minFromWake) + dayStretch.current;
 
 	// On-the-hour gridlines across the drawn span.
 	const grid = $derived.by(() => {
@@ -499,6 +537,11 @@
 				setSlot(tailSlot, Math.max(0, start.tail + d));
 			} else if (spec.type === 'day-start') {
 				setWakeFromMin(start.wake + d);
+				// Slide the whole timeline with the drag so the cap grows out of its top edge;
+				// floor the offset so the cap never compresses past MIN_DAY_PX.
+				dayStretch.set(Math.max(d * PX_PER_MIN, MIN_DAY_PX - TOP_PAD * PX_PER_MIN), {
+					duration: 0
+				});
 			}
 		};
 		const arm = () => {
@@ -512,6 +555,8 @@
 			// Pin the bedtime cap's bottom edge where it was grabbed, so the block
 			// stretches (rather than translating) while the top edge follows the drag.
 			if (spec.type === 'bedtime' && plan.ok) bedElasticBottom = y(plan.bedMin) + BOTTOM_PAD;
+			// Start the day-start slide from rest, cancelling any in-flight spring-back.
+			if (spec.type === 'day-start') dayStretch.set(0, { duration: 0 });
 			if ('vibrate' in navigator) navigator.vibrate(8);
 		};
 		const onDown = (e: PointerEvent) => {
@@ -574,6 +619,7 @@
 			armed = false;
 			movingSpec = null;
 			bedElasticBottom = null; // un-pin → the cap springs back to its natural size
+			if (spec.type === 'day-start') dayStretch.set(0); // slide the timeline back with a spring
 			try {
 				node.releasePointerCapture(e.pointerId);
 			} catch {
@@ -807,7 +853,7 @@
 							class="absolute right-0 left-14 flex touch-pan-y flex-col justify-end overflow-hidden rounded-b-lg border border-t-0 border-indigo-500/40 bg-gradient-to-b from-indigo-500/[0.04] to-indigo-500/20 px-3 pb-1.5 pr-9 text-left select-none hover:ring-2 hover:ring-indigo-400/40 {locks.wake
 								? 'cursor-pointer ring-1 ring-amber-500/70'
 								: 'cursor-grab'} {movingSpec?.type === 'day-start'
-								? 'z-10 ring-2 ring-indigo-500'
+								? 'z-10 shadow-xl ring-2 ring-indigo-500'
 								: ''}"
 							style="top: 0; height: {y(0)}px"
 						>
@@ -828,7 +874,7 @@
 						<!-- Awake windows + naps -->
 						{#each plan.blocks as b (b.kind + b.idx)}
 							{@const top = y(b.startMin)}
-							{@const h = Math.max(y(b.endMin) - top, 20)}
+							{@const h = Math.max(y(b.endMin) - top, MIN_BLOCK_PX)}
 							{@const isNap = b.kind === 'nap'}
 							{@const moving = movingSpec?.type === 'nap-move' && movingSpec.index === b.idx}
 							{@const locked = isNap ? napLocked(b.idx) : winLocked(b.idx)}
