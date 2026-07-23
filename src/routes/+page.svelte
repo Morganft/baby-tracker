@@ -31,6 +31,8 @@
 	const next = $derived(data.projection?.nextSleep ?? null);
 	const overdue = $derived(next != null && nowMs > next.start);
 	const budget = $derived(data.projection?.budget ?? null);
+	// In-day nudges from the projection engine (behavioural, read-only). See dayAdvice.ts.
+	const advice = $derived(data.projection?.advice ?? []);
 
 	// The most recent completed sleep — its end is "last wake", editable when awake.
 	const lastCompleted = $derived(
@@ -241,6 +243,25 @@
 						<p class="mt-1 text-xl font-semibold opacity-40">—</p>
 					{/if}
 				</div>
+			</div>
+		{/if}
+
+		<!-- In-day advice: read-only nudges from the projection engine. -->
+		{#if advice.length > 0}
+			<div class="space-y-2" data-testid="advice">
+				{#each advice as a (a.id)}
+					<div
+						class="rounded-2xl border px-3 py-2.5 {a.severity === 'warn'
+							? 'border-amber-500/30 bg-amber-500/10'
+							: 'border-indigo-500/20 bg-indigo-500/[0.06]'}"
+					>
+						<p class="text-sm font-medium">{a.title}</p>
+						<p class="mt-0.5 text-xs opacity-70">
+							{a.detail}{#if a.suggestedTime != null}
+								· <span class="font-medium">{fmtTime(a.suggestedTime)}</span>{/if}
+						</p>
+					</div>
+				{/each}
 			</div>
 		{/if}
 

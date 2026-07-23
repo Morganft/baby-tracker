@@ -4,7 +4,8 @@ import {
 	resolveEntryTimezone,
 	serverTimeZone,
 	parseSleepCreate,
-	parseSleepUpdate
+	parseSleepUpdate,
+	parseBabyUpdate
 } from './validate';
 
 describe('resolveEntryTimezone', () => {
@@ -85,5 +86,26 @@ describe('parseSleepUpdate — timezones', () => {
 	it('maps a legacy `timezone` field to the start zone', () => {
 		const out = parseSleepUpdate({ timezone: 'Europe/Prague' });
 		expect(out.startTimezone).toBe('Europe/Prague');
+	});
+});
+
+describe('parseBabyUpdate', () => {
+	it('accepts a valid ISO birth date', () => {
+		expect(parseBabyUpdate({ birthDate: '2026-01-22' })).toEqual({ birthDate: '2026-01-22' });
+	});
+
+	it('clears the birth date on empty string or null', () => {
+		expect(parseBabyUpdate({ birthDate: '' })).toEqual({ birthDate: null });
+		expect(parseBabyUpdate({ birthDate: null })).toEqual({ birthDate: null });
+	});
+
+	it('rejects a malformed or impossible date', () => {
+		expect(() => parseBabyUpdate({ birthDate: '22-01-2026' })).toThrow();
+		expect(() => parseBabyUpdate({ birthDate: '2026-13-40' })).toThrow();
+		expect(() => parseBabyUpdate({ birthDate: 123 })).toThrow();
+	});
+
+	it('rejects an update with no fields', () => {
+		expect(() => parseBabyUpdate({})).toThrow();
 	});
 });

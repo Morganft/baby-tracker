@@ -189,6 +189,8 @@ export function completedProjection(
 			napsCompleted: 0,
 			wakeUsedMin: 0,
 			wakeBudgetMin: 0
-		}
+		},
+		// A finished past day carries no live in-day advice.
+		advice: []
 	};
 }

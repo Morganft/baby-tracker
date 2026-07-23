@@ -105,6 +105,7 @@ export function exportData(): BackupDump {
 					shortNapReductionPercent: settingsRow.shortNapReductionPercent,
 					clock24h: settingsRow.clock24h,
 					dayStartTime: settingsRow.dayStartTime,
+					adviceEnabled: settingsRow.adviceEnabled,
 					createdAt: settingsRow.createdAt.getTime(),
 					updatedAt: settingsRow.updatedAt.getTime()
 				}
@@ -288,6 +289,7 @@ export function importData(raw: unknown): ImportResult {
 				shortNapReductionPercent: s.shortNapReductionPercent,
 				clock24h: s.clock24h,
 				dayStartTime: s.dayStartTime,
+				adviceEnabled: s.adviceEnabled,
 				createdAt: new Date(s.createdAt),
 				updatedAt: new Date(s.updatedAt)
 			};

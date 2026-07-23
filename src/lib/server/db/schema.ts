@@ -138,6 +138,9 @@ export const settings = sqliteTable('settings', {
 	// 'HH:MM' local: when the day (and the projection's default anchor) begins,
 	// used before an actual morning wake is logged. See projection query layer.
 	dayStartTime: text('day_start_time').notNull().default('07:00'),
+	// Master switch for the advice system (in-day nudges on Home + planning
+	// suggestions on /templates). On by default; off suppresses both.
+	adviceEnabled: integer('advice_enabled', { mode: 'boolean' }).notNull().default(true),
 	...timestamps
 });
 

@@ -18,6 +18,7 @@
  * unit-tested in isolation.
  */
 
+import { adviseDay } from './dayAdvice';
 import { resolveClockTime, minutesToMs, msToMinutes } from './time';
 import type { LoggedSleep, ProjectedSleep, Projection, ProjectionInput } from './types';
 
@@ -448,7 +449,7 @@ export function project(input: ProjectionInput): Projection {
 	const wakeBudgetMin = wakeWindows.reduce((a, b) => a + b, 0);
 	const wakeUsedMin = Math.max(0, Math.round(msToMinutes(now - anchor) - daytimeUsedMin));
 
-	return {
+	const projection: Projection = {
 		anchor,
 		anchorIsActual,
 		sleeps: result,
@@ -461,6 +462,12 @@ export function project(input: ProjectionInput): Projection {
 			napsCompleted,
 			wakeUsedMin,
 			wakeBudgetMin
-		}
+		},
+		advice: []
 	};
+
+	// Advice is part of the engine's output: compute it from the finished
+	// projection so the home consumes it alongside the sleeps.
+	projection.advice = adviseDay(input, projection);
+	return projection;
 }

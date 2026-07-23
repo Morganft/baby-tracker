@@ -190,7 +190,7 @@ export function deleteWaking(wakingId: string): boolean {
 }
 
 /** Read every sleep row as a minimal `DayEntry` for the grouping layer. */
-function readDayEntries(): DayEntry[] {
+export function readDayEntries(): DayEntry[] {
 	return db
 		.select()
 		.from(sleepEntry)

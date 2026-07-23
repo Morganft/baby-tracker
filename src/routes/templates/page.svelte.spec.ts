@@ -60,7 +60,13 @@ const active = (over: Partial<ActiveTemplateDTO> = {}): ActiveTemplateDTO => ({
 });
 
 const data = (over: Partial<PageData> = {}): PageData =>
-	({ active: active(), library: [], clock24h: true, ...over }) as unknown as PageData;
+	({
+		active: active(),
+		library: [],
+		clock24h: true,
+		planAdvice: [],
+		...over
+	}) as unknown as PageData;
 
 describe('Active-slot editor form — fields survive an auto-save', () => {
 	it('keeps the Advanced field values after the editor form is submitted', async () => {
@@ -79,5 +85,50 @@ describe('Active-slot editor form — fields survive an auto-save', () => {
 
 		expect(nameInput.value).toBe('3-nap winter');
 		expect(minInput.value).toBe('90, 120, 180');
+	});
+});
+
+describe('Planning-advice panel', () => {
+	const advice = (over: Record<string, unknown> = {}) => ({
+		id: 'nap-count',
+		severity: 'warn' as const,
+		confidence: 'medium' as const,
+		title: 'Switch the plan to 2 naps',
+		detail: "You've been doing 2 naps a day, but the plan is built for 3.",
+		patch: { napCount: 2 },
+		...over
+	});
+
+	it('renders nothing when there is no advice', () => {
+		render(Page, { props: { data: data(), form: null } });
+		expect(document.querySelector('[data-testid="plan-advice"]')).toBeNull();
+	});
+
+	it('renders a card with an Apply button that posts the advice id', () => {
+		render(Page, {
+			props: { data: data({ planAdvice: [advice()] } as Partial<PageData>), form: null }
+		});
+		const panel = document.querySelector('[data-testid="plan-advice"]')!;
+		expect(panel).not.toBeNull();
+		expect(panel.textContent).toContain('Switch the plan to 2 naps');
+
+		const applyForm = panel.querySelector<HTMLFormElement>('form[action="?/applyAdvice"]')!;
+		expect(applyForm).not.toBeNull();
+		expect(applyForm.querySelector<HTMLInputElement>('input[name="adviceId"]')!.value).toBe(
+			'nap-count'
+		);
+	});
+
+	it('omits the Apply button for informational advice with no patch', () => {
+		render(Page, {
+			props: {
+				data: data({
+					planAdvice: [advice({ id: 'age-daytime-total', severity: 'info', patch: undefined })]
+				} as Partial<PageData>),
+				form: null
+			}
+		});
+		const panel = document.querySelector('[data-testid="plan-advice"]')!;
+		expect(panel.querySelector('form[action="?/applyAdvice"]')).toBeNull();
 	});
 });

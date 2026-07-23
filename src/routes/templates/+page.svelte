@@ -610,6 +610,51 @@
 		</p>
 	{/if}
 
+	{#if data.planAdvice.length > 0}
+		<div
+			class="space-y-2 rounded-2xl border border-black/10 p-4 dark:border-white/10"
+			data-testid="plan-advice"
+		>
+			<div>
+				<h3 class="text-sm font-semibold">Advice</h3>
+				<p class="text-xs opacity-60">
+					From the last two weeks of logs. Age ranges are guidance, not rules.
+				</p>
+			</div>
+			{#each data.planAdvice as a (a.id)}
+				<div
+					class="rounded-xl border px-3 py-2.5 {a.severity === 'warn'
+						? 'border-amber-500/30 bg-amber-500/10'
+						: 'border-indigo-500/20 bg-indigo-500/[0.06]'}"
+				>
+					<div class="flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<p class="text-sm font-medium">{a.title}</p>
+							<p class="mt-0.5 text-xs opacity-70">{a.detail}</p>
+						</div>
+						{#if a.patch}
+							<form
+								method="POST"
+								action="?/applyAdvice"
+								use:enhance={() =>
+									async ({ update }) =>
+										update({ reset: false })}
+							>
+								<input type="hidden" name="adviceId" value={a.id} />
+								<button
+									type="submit"
+									class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.99]"
+								>
+									Apply
+								</button>
+							</form>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="flex flex-col gap-6 lg:flex-row lg:items-start">
 		<!-- Main column: the editable timeline + the raw field form -->
 		<div class="order-1 space-y-6 lg:order-2 lg:min-w-0 lg:flex-1">

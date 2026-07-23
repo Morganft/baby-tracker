@@ -7,7 +7,7 @@
  * data the user is expected to edit; nothing here is enforced.
  */
 import { db } from './index';
-import { settings, activeTemplate } from './schema';
+import { settings, activeTemplate, baby } from './schema';
 import { eq } from 'drizzle-orm';
 
 /** A neutral example day used to seed the initial active template. */
@@ -38,6 +38,14 @@ export function ensureSettings(): void {
 	const existing = db.select().from(settings).where(eq(settings.id, 'settings')).get();
 	if (!existing) {
 		db.insert(settings).values({ id: 'settings' }).run();
+	}
+}
+
+/** Ensure the single baby row exists (birth date left unset by default). */
+export function ensureBaby(): void {
+	const existing = db.select().from(baby).where(eq(baby.id, 'baby')).get();
+	if (!existing) {
+		db.insert(baby).values({ id: 'baby' }).run();
 	}
 }
 

@@ -1,4 +1,5 @@
 export { project } from './project';
+export { adviseDay } from './dayAdvice';
 export { resolveClockTime, minutesToMs, msToMinutes } from './time';
 export type {
 	TemplateConfig,
@@ -7,5 +8,6 @@ export type {
 	ProjectionInput,
 	ProjectedSleep,
 	Projection,
-	SleepStatus
+	SleepStatus,
+	DayAdvice
 } from './types';

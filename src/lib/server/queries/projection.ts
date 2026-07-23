@@ -7,9 +7,11 @@ import { getActiveTemplate } from './templates';
 import { getDayOverride } from './dayOverride';
 import { localDateKey } from './day';
 import { getSettings } from './settings';
+import { getBaby } from './baby';
 import { assembleDay } from './sleeps';
 import { project } from '$lib/projection/project';
 import { planBedtime } from '$lib/projection/planBedtime';
+import { ageMonthsFromBirthDate } from '$lib/advice/reference';
 import type { Projection } from '$lib/projection/types';
 
 /**
@@ -22,6 +24,8 @@ export function buildProjection(now: number, timeZone: string): Projection {
 	const override = getDayOverride(localDateKey(now, timeZone));
 	const template = override ?? getActiveTemplate();
 	const settings = getSettings();
+	const baby = getBaby();
+	const ageMonths = baby.birthDate ? ageMonthsFromBirthDate(baby.birthDate, now) : null;
 	const { sleeps, morningWake } = assembleDay(now, timeZone);
 	// The soft target bedtime is the plan's *own* cascaded bedtime (reference wake +
 	// wake windows + nap durations), so the projection always steers toward the
@@ -31,7 +35,7 @@ export function buildProjection(now: number, timeZone: string): Projection {
 	const targetBedtime = override
 		? null
 		: planBedtime(template.referenceWakeTime, template.wakeWindows, template.expectedNapDurations);
-	return project({
+	const projection = project({
 		now,
 		timeZone,
 		template: {
@@ -54,6 +58,11 @@ export function buildProjection(now: number, timeZone: string): Projection {
 			shortNapReductionPercent: settings.shortNapReductionPercent
 		},
 		sleeps,
-		morningWake
+		morningWake,
+		ageMonths
 	});
+	// The advice system is opt-out via settings; when disabled, drop the in-day
+	// nudges so the Home card never renders (projection math is unaffected).
+	if (!settings.adviceEnabled) projection.advice = [];
+	return projection;
 }

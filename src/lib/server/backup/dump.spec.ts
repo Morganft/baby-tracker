@@ -51,6 +51,7 @@ function fullDump(): BackupDump {
 			shortNapReductionPercent: 30,
 			clock24h: true,
 			dayStartTime: '07:00',
+			adviceEnabled: true,
 			createdAt: 1,
 			updatedAt: 2
 		}
@@ -81,6 +82,13 @@ describe('parseBackup', () => {
 		expect(parsed.sleepEntries[0].endTimezone).toBe('Asia/Dubai');
 		expect(parsed.nightWakings[0].sleepEntryId).toBe('s1');
 		expect(parsed.settings?.clock24h).toBe(true);
+		expect(parsed.settings?.adviceEnabled).toBe(true);
+	});
+
+	it('defaults adviceEnabled to true for a backup predating the field', () => {
+		const d = fullDump();
+		delete (d.settings as unknown as { adviceEnabled?: boolean }).adviceEnabled;
+		expect(parseBackup(d).settings?.adviceEnabled).toBe(true);
 	});
 
 	it('reads a legacy dump (single `timezone`, stray `trackTimezone`)', () => {

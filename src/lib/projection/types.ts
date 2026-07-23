@@ -65,6 +65,28 @@ export interface ProjectionInput {
 	 * null/undefined means no override.
 	 */
 	windowOverrides?: (number | null | undefined)[];
+	/**
+	 * Baby's age in (fractional) months at `now`, when a birth date is known.
+	 * Unlocks age-based in-day advice; absent → data-only nudges. See
+	 * `ageMonthsFromBirthDate` in `src/lib/advice/reference.ts`.
+	 */
+	ageMonths?: number | null;
+}
+
+/**
+ * A single in-day nudge produced by `adviseDay`. Read-only behavioural guidance
+ * (no apply button) surfaced on the Right-now home.
+ */
+export interface DayAdvice {
+	/** Stable rule id, e.g. 'short-nap' | 'overtired' | 'bedtime-late'. */
+	id: string;
+	severity: 'info' | 'warn';
+	/** Short headline. */
+	title: string;
+	/** One-sentence explanation with the concrete suggestion. */
+	detail: string;
+	/** Optional suggested clock instant (epoch-ms) the advice points at. */
+	suggestedTime?: number;
 }
 
 export type SleepStatus = 'completed' | 'in-progress' | 'projected';
@@ -118,4 +140,6 @@ export interface Projection {
 		/** Planned total awake time for the day = sum of the template wake windows. */
 		wakeBudgetMin: number;
 	};
+	/** In-day behavioural nudges derived from this projection (may be empty). */
+	advice: DayAdvice[];
 }

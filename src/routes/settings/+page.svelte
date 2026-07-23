@@ -5,6 +5,7 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	const s = $derived(data.settings);
+	const baby = $derived(data.baby);
 </script>
 
 <section class="space-y-5">
@@ -106,6 +107,40 @@
 					class="h-5 w-5 rounded text-indigo-600"
 				/>
 			</label>
+
+			<label class="flex items-center justify-between gap-3">
+				<span>
+					<span class="block text-sm font-medium">Sleep advice</span>
+					<span class="block text-xs opacity-60">
+						In-day nudges on Home and planning suggestions on the plan page. Off hides both.
+					</span>
+				</span>
+				<input
+					type="checkbox"
+					name="adviceEnabled"
+					checked={s.adviceEnabled}
+					class="h-5 w-5 rounded text-indigo-600"
+				/>
+			</label>
+		</div>
+
+		<div
+			class="space-y-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
+		>
+			<div>
+				<label class="block text-sm font-medium" for="birthDate">Baby’s birth date</label>
+				<p class="mb-2 text-xs opacity-60">
+					Optional. When set, advice can compare against age-based sleep guidance. Leave blank for
+					data-only advice.
+				</p>
+				<input
+					id="birthDate"
+					type="date"
+					name="birthDate"
+					value={baby.birthDate ?? ''}
+					class="w-44 rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm dark:border-white/20"
+				/>
+			</div>
 		</div>
 
 		<button

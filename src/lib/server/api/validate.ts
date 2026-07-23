@@ -14,6 +14,15 @@ export type SleepLocation = (typeof LOCATIONS)[number];
 export type PutDown = (typeof PUT_DOWNS)[number];
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a real calendar date in 'YYYY-MM-DD' form (rejects 2026-13-40). */
+function isRealCalendarDate(s: string): boolean {
+	if (!ISO_DATE.test(s)) return false;
+	const [y, m, d] = s.split('-').map(Number);
+	const dt = new Date(Date.UTC(y, m - 1, d));
+	return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
 
 function obj(body: unknown): Record<string, unknown> {
 	if (body === null || typeof body !== 'object' || Array.isArray(body)) {
@@ -276,6 +285,7 @@ export interface SettingsUpdate {
 	shortNapReductionPercent?: number;
 	clock24h?: boolean;
 	dayStartTime?: string;
+	adviceEnabled?: boolean;
 }
 
 function bool(v: unknown, name: string): boolean {
@@ -295,11 +305,38 @@ export function parseSettingsUpdate(body: unknown): SettingsUpdate {
 		out.shortNapReductionPercent = p;
 	}
 	if ('clock24h' in b) out.clock24h = bool(b.clock24h, 'clock24h');
+	if ('adviceEnabled' in b) out.adviceEnabled = bool(b.adviceEnabled, 'adviceEnabled');
 	if ('dayStartTime' in b) {
 		if (typeof b.dayStartTime !== 'string' || !HHMM.test(b.dayStartTime)) {
 			throw error(400, "dayStartTime must be 'HH:MM'");
 		}
 		out.dayStartTime = b.dayStartTime;
+	}
+	if (Object.keys(out).length === 0) throw error(400, 'No updatable fields provided');
+	return out;
+}
+
+export interface BabyUpdate {
+	birthDate?: string | null;
+}
+
+/**
+ * Validate an edit to the single baby row. `birthDate` is an optional ISO
+ * 'YYYY-MM-DD'; an empty string or explicit null clears it (falls back to
+ * data-only advice).
+ */
+export function parseBabyUpdate(body: unknown): BabyUpdate {
+	const b = obj(body);
+	const out: BabyUpdate = {};
+	if ('birthDate' in b) {
+		const v = b.birthDate;
+		if (v === null || v === '') {
+			out.birthDate = null;
+		} else if (typeof v === 'string' && isRealCalendarDate(v)) {
+			out.birthDate = v;
+		} else {
+			throw error(400, "birthDate must be 'YYYY-MM-DD' or empty");
+		}
 	}
 	if (Object.keys(out).length === 0) throw error(400, 'No updatable fields provided');
 	return out;

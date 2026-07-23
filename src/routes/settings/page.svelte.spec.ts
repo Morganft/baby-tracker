@@ -46,13 +46,22 @@ const settings = (over: Partial<SettingsDTO> = {}): SettingsDTO => ({
 	shortNapReductionPercent: 30,
 	clock24h: true,
 	dayStartTime: '07:00',
+	adviceEnabled: true,
+	createdAt: 0,
+	updatedAt: 0,
+	...over
+});
+
+const baby = (over: Record<string, unknown> = {}) => ({
+	name: null,
+	birthDate: '2026-01-22',
 	createdAt: 0,
 	updatedAt: 0,
 	...over
 });
 
 const data = (over: Partial<PageData> = {}): PageData =>
-	({ settings: settings(), ...over }) as unknown as PageData;
+	({ settings: settings(), baby: baby(), ...over }) as unknown as PageData;
 
 const input = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
 
@@ -84,5 +93,28 @@ describe('Settings form — fields survive a save', () => {
 
 		expect(input('shortNapThresholdMin').value).toBe('20');
 		expect(input('dayStartTime').value).toBe('06:30');
+	});
+
+	it('shows the baby birth date and keeps it across a save', async () => {
+		render(Page, { props: { data: data(), form: null } });
+		const saveForm = screen.getByRole('button', { name: 'Save settings' }).closest('form')!;
+
+		expect(input('birthDate').value).toBe('2026-01-22');
+		await fireEvent.submit(saveForm);
+		expect(input('birthDate').value).toBe('2026-01-22');
+	});
+
+	it('renders an empty birth-date field when none is set', () => {
+		render(Page, {
+			props: { data: data({ baby: baby({ birthDate: null }) } as Partial<PageData>), form: null }
+		});
+		expect(input('birthDate').value).toBe('');
+	});
+
+	it('reflects the advice-enabled toggle from settings', () => {
+		render(Page, {
+			props: { data: data({ settings: settings({ adviceEnabled: false }) }), form: null }
+		});
+		expect(input('adviceEnabled').checked).toBe(false);
 	});
 });

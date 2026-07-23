@@ -15,16 +15,25 @@ import {
 	type ActiveTemplateDTO
 } from '$lib/server/queries/templates';
 import { getSettings } from '$lib/server/queries/settings';
-import { parseTemplate, type TemplateInput } from '$lib/server/api/validate';
+import { getPlanAdvice } from '$lib/server/queries/planAdvice';
+import { parseTemplate, resolveDisplayZone, type TemplateInput } from '$lib/server/api/validate';
 import { fail, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => ({
-	active: getActiveTemplate(),
-	library: listTemplates(),
-	// Reference-preview honours the 12/24h display preference like the other views.
-	clock24h: getSettings().clock24h
-});
+export const load: PageServerLoad = ({ cookies }) => {
+	const timeZone = resolveDisplayZone(cookies.get('tz'));
+	const settings = getSettings();
+	return {
+		active: getActiveTemplate(),
+		library: listTemplates(),
+		// Reference-preview honours the 12/24h display preference like the other views.
+		clock24h: settings.clock24h,
+		// Data-driven suggestions for the active plan (last ~2 weeks). Read-only here;
+		// applying one goes through the `applyAdvice` action, which re-derives them.
+		// Suppressed entirely when the advice system is switched off in settings.
+		planAdvice: settings.adviceEnabled ? getPlanAdvice(Date.now(), timeZone).advice : []
+	};
+};
 
 const s = (v: FormDataEntryValue | null) => (typeof v === 'string' ? v : '');
 const numOrNull = (v: FormDataEntryValue | null) => {
@@ -134,5 +143,31 @@ export const actions: Actions = {
 		const id = s((await request.formData()).get('templateId'));
 		if (!id || !deleteTemplate(id)) return fail(404, { message: 'Template not found' });
 		return { ok: true, message: 'Template deleted' };
+	},
+
+	/**
+	 * Apply one piece of planning advice to the active slot. The client sends only
+	 * the advice `id`; the server re-derives the current advice, looks up that id,
+	 * merges its `patch` into the active columns and re-validates — so a stale or
+	 * forged patch can never reach the DB.
+	 */
+	applyAdvice: async ({ request, cookies }) => {
+		const id = s((await request.formData()).get('adviceId'));
+		if (!id) return fail(400, { message: 'Missing advice id' });
+		// With advice switched off there is nothing to apply — reject rather than
+		// re-derive suggestions the user has opted out of.
+		if (!getSettings().adviceEnabled) return fail(409, { message: 'Advice is turned off' });
+		const timeZone = resolveDisplayZone(cookies.get('tz'));
+		const advice = getPlanAdvice(Date.now(), timeZone).advice.find((a) => a.id === id);
+		if (!advice) return fail(409, { message: 'That advice no longer applies' });
+		if (!advice.patch) return fail(400, { message: 'This advice has nothing to apply' });
+		try {
+			updateActiveTemplate(
+				parseTemplate({ ...activeColumns(getActiveTemplate()), ...advice.patch })
+			);
+		} catch (e) {
+			return failFromValidation(e);
+		}
+		return { ok: true, message: 'Applied advice to the active plan' };
 	}
 };
