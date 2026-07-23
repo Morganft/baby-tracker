@@ -78,6 +78,17 @@
 	// is a projection, not a recorded sleep.
 	const anchorIsActual = $derived(data.projection.anchorIsActual);
 
+	// Whether a night/bedtime block is drawn full-height, spanning to its morning
+	// wake. Today's bedtime is always the open-ended day-close block; a past day's
+	// completed night is only worth that tall span when there are night wakings to
+	// show inside it — otherwise it's an empty stretch to the next morning, so draw
+	// a compact cap instead (and keep its end out of the day's bounds below).
+	const nightIsLong = (s: ProjectedSleep) => {
+		if (data.isToday || s.projectedEnd == null) return true;
+		const e = s.entryId ? data.entries[s.entryId] : undefined;
+		return (e?.nightWakings.length ?? 0) > 0;
+	};
+
 	// Wake-window segments: the awake gap leading into each sleep, rendered as a
 	// block spanning cursor→sleep-start with its duration (actual for logged
 	// sleeps, template/redistributed otherwise). `planned` = leads into a
@@ -121,7 +132,11 @@
 	// Day span: from the anchor (morning wake / reference) to the last sleep's end
 	// or start, widened to always include `now` and padded slightly at both ends.
 	const bounds = $derived.by(() => {
-		const ends = sleeps.map((s) => s.projectedEnd ?? s.start);
+		// A compact (no-waking) past-day bedtime is a fixed cap at its start, so its
+		// far-off morning wake must not drag the axis down to next morning.
+		const ends = sleeps.map((s) =>
+			s.type === 'night' && !nightIsLong(s) ? s.start : (s.projectedEnd ?? s.start)
+		);
 		const starts = sleeps.map((s) => s.start);
 		// Live-only extents: past days span just their own logged sleeps (no `now`
 		// line and no editable tail bedtime to grow toward).
@@ -666,7 +681,7 @@
 		{#each sleeps as s, i (s.index)}
 			{#if !(editable && s.status === 'projected')}
 				{@const top = pos(s.start)}
-				{#if s.type === 'night'}
+				{#if s.type === 'night' && nightIsLong(s)}
 					<!-- Bedtime: open-ended (the day's close), rendered as a block that
 				     fills the bottom pad below its start. -->
 					{@const end = s.projectedEnd ?? s.start + PAD_MS}
@@ -690,6 +705,28 @@
 								>{/if}
 						</span>
 						<span class="block truncate text-xs opacity-70">{time(s.start)}</span>
+					</button>
+				{:else if s.type === 'night'}
+					<!-- Past-day bedtime with no logged night wakings: a compact cap showing
+				     the night's span, instead of a tall empty block down to the morning. -->
+					{@const end = s.projectedEnd ?? s.start}
+					<button
+						type="button"
+						onclick={() => openSleep(s)}
+						class="absolute right-0 left-14 flex flex-col justify-center overflow-hidden rounded-lg border border-indigo-500/40 bg-indigo-500/25 px-3 text-left transition active:scale-[0.99]"
+						style="top: {top}px; height: {MIN_BLOCK_PX}px"
+					>
+						<span class="block truncate text-sm font-medium text-indigo-700 dark:text-indigo-300">
+							🌙 {typeLabel(s.type, i)}{#if zoneChip(s)}<span
+									class="ml-1 rounded bg-black/10 px-1 py-0.5 text-[0.6rem] font-medium opacity-70 dark:bg-white/10"
+									>{zoneChip(s)}</span
+								>{/if}
+						</span>
+						<span class="block truncate text-xs opacity-70">
+							{time(s.start)}{#if s.projectedEnd != null}–{time(end)}{#if s.durationMin != null}
+									·
+									<span class="text-sm font-semibold">{fmtDuration(s.durationMin)}</span>{/if}{/if}
+						</span>
 					</button>
 				{:else}
 					<!-- An in-progress nap that has out-run its estimate grows to the live

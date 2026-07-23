@@ -270,6 +270,55 @@ function pastDayWithShortNapRun(): PageData {
 	} as unknown as PageData;
 }
 
+// A past day whose bedtime is a *completed* night: it started at 19:00 and ended at
+// the next morning's 07:00, with an actual morning wake for the viewed day too.
+// `withWakings` toggles whether any night wakings were logged — the only thing that
+// should decide a full-night block vs. a compact cap.
+function pastDayWithCompletedBedtime(withWakings: boolean): PageData {
+	const entries = [
+		{ id: 'lastnight', type: 'night' as const, start: on(8, '19:00'), end: at('07:00') },
+		{ id: 'night', type: 'night' as const, start: at('19:00'), end: on(10, '07:00') }
+	];
+	const grouping = groupDayForKey(entries, '2026-07-09', TZ);
+	const projection = completedProjection(grouping, 15, at('07:00'));
+
+	return {
+		viewedDayKey: '2026-07-09',
+		todayKey: '2026-07-10',
+		isToday: false,
+		prevKey: '2026-07-08',
+		nextKey: '2026-07-10',
+		minKey: '2026-07-01',
+		label: 'Thu 9 Jul 2026',
+		now: on(10, '08:00'),
+		timeZone: TZ,
+		clock24h: true,
+		templateName: 'Test plan',
+		entryZones: {},
+		entries: {
+			night: sleepEntry({
+				id: 'night',
+				startTime: at('19:00'),
+				endTime: on(10, '07:00'),
+				nightWakings: withWakings ? [on(10, '02:00')] : []
+			}),
+			lastnight: sleepEntry({ id: 'lastnight', startTime: on(8, '19:00'), endTime: at('07:00') })
+		},
+		overnightEntryId: grouping.overnightEntryId,
+		overnightDraft: null,
+		overrideActive: false,
+		plan: null,
+		projection
+	} as unknown as PageData;
+}
+
+/** Rendered height (px, from the inline style) of the timeline's day container. */
+function dayContainerHeight(container: HTMLElement): number {
+	const el = container.querySelector<HTMLElement>('.relative[style*="height:"]');
+	const m = el?.getAttribute('style')?.match(/height:\s*([\d.]+)px/);
+	return m ? Number(m[1]) : NaN;
+}
+
 /** Top (px) of the hour-gridline row whose label is exactly `label`, or undefined. */
 function gridlineTop(container: HTMLElement, label: string): number | undefined {
 	const el = Array.from(container.querySelectorAll<HTMLElement>('[style*="top:"]')).find(
@@ -300,6 +349,48 @@ describe('Timeline — past day, only a bedtime logged (no morning wake)', () =>
 	it('leaves the stretch above the bedtime unallocated (no Awake block)', () => {
 		render(Page, { props: { data: pastDayWithOnlyBedtime(), form: null } });
 		expect(screen.queryByText('Awake')).not.toBeInTheDocument();
+	});
+});
+
+describe('Timeline — past day, completed bedtime', () => {
+	it('draws a compact bedtime cap when no night wakings were logged', () => {
+		const { container } = render(Page, {
+			props: { data: pastDayWithCompletedBedtime(false), form: null }
+		});
+		const bed = blockBox(container, 'Bedtime');
+		expect(bed).toBeDefined();
+		// A compact cap (~one min-block), not the tall full-night block that would
+		// otherwise span all the way down to the next-morning wake.
+		expect(bed!.height).toBeLessThanOrEqual(MIN_TWO_LINE_PX);
+	});
+
+	it('shows the night’s span in the compact cap', () => {
+		render(Page, { props: { data: pastDayWithCompletedBedtime(false), form: null } });
+		const bed = screen.getByText(/🌙 Bedtime/).closest('button');
+		expect(bed?.textContent).toMatch(/19:00–07:00/);
+		expect(bed?.textContent).toMatch(/12h/);
+	});
+
+	it('keeps the full-night block when wakings were logged', () => {
+		const { container } = render(Page, {
+			props: { data: pastDayWithCompletedBedtime(true), form: null }
+		});
+		const bed = blockBox(container, 'Bedtime');
+		expect(bed).toBeDefined();
+		// The full-night block spans ~12h down to the morning — far taller than a cap.
+		expect(bed!.height).toBeGreaterThan(MIN_TWO_LINE_PX * 3);
+	});
+
+	it('does not stretch the axis to the next morning for a compact bedtime', () => {
+		const compact = render(Page, {
+			props: { data: pastDayWithCompletedBedtime(false), form: null }
+		});
+		const long = render(Page, {
+			props: { data: pastDayWithCompletedBedtime(true), form: null }
+		});
+		// The wakings variant runs the axis to 07:00 next morning; the compact one
+		// stops just past the 19:00 bedtime, so its whole timeline is shorter.
+		expect(dayContainerHeight(compact.container)).toBeLessThan(dayContainerHeight(long.container));
 	});
 });
 
