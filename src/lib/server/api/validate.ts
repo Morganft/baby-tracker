@@ -57,6 +57,15 @@ function numberArray(v: unknown, name: string): number[] {
 	return v as number[];
 }
 
+/** Like `numberArray`, but every element must be a whole number of minutes. */
+function intArray(v: unknown, name: string): number[] {
+	const arr = numberArray(v, name);
+	if (arr.some((n) => !Number.isInteger(n))) {
+		throw error(400, `${name} must be an array of integers`);
+	}
+	return arr;
+}
+
 function oneOf<T extends readonly string[]>(v: unknown, name: string, allowed: T): T[number] {
 	if (typeof v !== 'string' || !allowed.includes(v)) {
 		throw error(400, `${name} must be one of: ${allowed.join(', ')}`);
@@ -221,10 +230,10 @@ function hhmmOrNull(v: unknown, name: string): string | null {
 	return v;
 }
 
-/** Validate an optional bounds array: null, or non-negative numbers of `len`. */
+/** Validate an optional bounds array: null, or non-negative integers of `len`. */
 function boundArrayOrNull(v: unknown, name: string, len: number): number[] | null {
 	if (v == null) return null;
-	const arr = numberArray(v, name);
+	const arr = intArray(v, name);
 	if (arr.length !== len) throw error(400, `${name} must have length ${len}`);
 	if (arr.some((n) => n < 0)) throw error(400, `${name} values must be ≥ 0`);
 	return arr;
@@ -242,8 +251,8 @@ function assertMinMax(min: number[] | null, max: number[] | null, name: string):
 export function parseTemplate(body: unknown): TemplateInput {
 	const b = obj(body);
 	const napCount = intMin(b.napCount, 'napCount', 0);
-	const wakeWindows = numberArray(b.wakeWindows, 'wakeWindows');
-	const expectedNapDurations = numberArray(b.expectedNapDurations, 'expectedNapDurations');
+	const wakeWindows = intArray(b.wakeWindows, 'wakeWindows');
+	const expectedNapDurations = intArray(b.expectedNapDurations, 'expectedNapDurations');
 	if (wakeWindows.length !== napCount + 1) {
 		throw error(400, `wakeWindows must have length napCount + 1 (${napCount + 1})`);
 	}

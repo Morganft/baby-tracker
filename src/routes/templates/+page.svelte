@@ -5,6 +5,7 @@
 	import { enhance } from '$app/forms';
 	import { initHistory, commit, undo, redo, type History } from '$lib/timeline/history';
 	import type { PageData, ActionData } from './$types';
+	import { fmtDuration } from '$lib/format';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -190,12 +191,6 @@
 		const period = h < 12 ? 'am' : 'pm';
 		const h12 = h % 12 === 0 ? 12 : h % 12;
 		return `${h12}:${mm}${period}`;
-	}
-
-	function fmtDur(min: number): string {
-		const h = Math.floor(min / 60);
-		const m = min % 60;
-		return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 	}
 
 	type Block = {
@@ -898,7 +893,7 @@
 									{isNap ? `Nap ${b.idx + 1}` : 'Awake'}{locked ? ' · locked' : ''}
 								</p>
 								<p class="truncate text-xs opacity-60">
-									{b.startClock}–{b.endClock} · {fmtDur(b.min)}
+									{b.startClock}–{b.endClock} · {fmtDuration(b.min)}
 								</p>
 							</button>
 							{@render lockToggle(
@@ -980,9 +975,9 @@
 
 					<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs opacity-70">
 						<span
-							>{plan.napCount} nap{plan.napCount === 1 ? '' : 's'} · {fmtDur(plan.daySleep)} day sleep</span
+							>{plan.napCount} nap{plan.napCount === 1 ? '' : 's'} · {fmtDuration(plan.daySleep)} day sleep</span
 						>
-						<span>{fmtDur(plan.awakeTotal)} awake</span>
+						<span>{fmtDuration(plan.awakeTotal)} awake</span>
 						<button
 							type="button"
 							onclick={addNap}

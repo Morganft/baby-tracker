@@ -5,7 +5,8 @@ import {
 	serverTimeZone,
 	parseSleepCreate,
 	parseSleepUpdate,
-	parseBabyUpdate
+	parseBabyUpdate,
+	parseTemplate
 } from './validate';
 
 describe('resolveEntryTimezone', () => {
@@ -107,5 +108,48 @@ describe('parseBabyUpdate', () => {
 
 	it('rejects an update with no fields', () => {
 		expect(() => parseBabyUpdate({})).toThrow();
+	});
+});
+
+describe('parseTemplate — integer minutes invariant', () => {
+	// A minimal, valid two-nap template; individual tests override single fields.
+	const base = {
+		name: 'Test',
+		referenceWakeTime: '07:00',
+		napCount: 2,
+		wakeWindows: [120, 150, 180],
+		expectedNapDurations: [60, 45]
+	};
+
+	it('accepts whole-minute wakeWindows / expectedNapDurations', () => {
+		const out = parseTemplate(base);
+		expect(out.wakeWindows).toEqual([120, 150, 180]);
+		expect(out.expectedNapDurations).toEqual([60, 45]);
+	});
+
+	it('rejects a fractional wakeWindows entry', () => {
+		expect(() => parseTemplate({ ...base, wakeWindows: [120, 150.5, 180] })).toThrow();
+	});
+
+	it('rejects a fractional expectedNapDurations entry', () => {
+		expect(() => parseTemplate({ ...base, expectedNapDurations: [60, 45.25] })).toThrow();
+	});
+
+	it('accepts whole-minute redistribution bounds', () => {
+		const out = parseTemplate({
+			...base,
+			wakeWindowMin: [90, 120, 150],
+			wakeWindowMax: [150, 180, 210],
+			napDurationMin: [30, 30],
+			napDurationMax: [90, 90]
+		});
+		expect(out.wakeWindowMin).toEqual([90, 120, 150]);
+		expect(out.napDurationMax).toEqual([90, 90]);
+	});
+
+	it('rejects a fractional redistribution bound', () => {
+		expect(() =>
+			parseTemplate({ ...base, wakeWindowMin: [90, 120.5, 150] })
+		).toThrow();
 	});
 });

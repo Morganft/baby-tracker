@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolveClockTime } from '$lib/projection/time';
-	import { browserTimeZone, fmtTime as fmtTimeIn, fmtZoneAbbrev } from '$lib/format';
+	import { browserTimeZone, fmtDuration, fmtTime as fmtTimeIn, fmtZoneAbbrev } from '$lib/format';
 	import DayNav from '$lib/components/DayNav.svelte';
 	import type { PageData, ActionData } from './$types';
 
@@ -88,12 +88,6 @@
 		const h = parts.find((p) => p.type === 'hour')?.value ?? '00';
 		const m = parts.find((p) => p.type === 'minute')?.value ?? '00';
 		return `${h === '24' ? '00' : h}:${m}`;
-	}
-
-	function fmtDuration(min: number): string {
-		const h = Math.floor(min / 60);
-		const m = min % 60;
-		return h > 0 ? `${h}h ${m}m` : `${m}m`;
 	}
 
 	const typeLabel = (t: 'nap' | 'night') => (t === 'night' ? 'bedtime' : 'nap');
